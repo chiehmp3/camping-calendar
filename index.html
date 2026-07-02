@@ -146,6 +146,12 @@
   }
   .legendItem { display: flex; align-items: center; gap: 5px; }
 
+  #importBar { padding: 10px 14px 0; }
+  #importBar button {
+    background: none; border: 1px solid var(--border); padding: 6px 10px;
+    border-radius: 8px; font-size: 12px; cursor: pointer; color: var(--text);
+  }
+
   #calendarWrap { padding: 10px; max-width: 900px; margin: 0 auto; }
   #addBtn {
     position: fixed;
@@ -259,11 +265,29 @@
 
   <div id="legend"></div>
 
+  <div id="importBar">
+    <button id="importBtn" type="button">📥 從 Apple / Google 日曆匯入 (.ics)</button>
+    <input type="file" id="icsFileInput" accept=".ics,text/calendar" style="display:none;" />
+  </div>
+
   <div id="calendarWrap">
     <div id="calendar"></div>
   </div>
 
   <button id="addBtn" title="新增露營行程">＋</button>
+</div>
+
+<!-- ===== 從 .ics 匯入行程 Modal ===== -->
+<div class="modalOverlay" id="importModal">
+  <div class="modalCard">
+    <h2>選擇要匯入的行程</h2>
+    <p class="shareNote" style="margin-bottom:10px;">從檔案讀到 <span id="importCount">0</span> 筆，勾選想加入露營行事曆的項目（沒打勾的不會匯入）</p>
+    <div class="checkList" id="importList" style="max-height:320px;"></div>
+    <div class="modalActions">
+      <button class="btnGhost" id="importCancelBtn">取消</button>
+      <button class="btnPrimary" id="importConfirmBtn">匯入所選</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===== 新增 / 編輯行程 Modal ===== -->
@@ -818,6 +842,138 @@ function escapeHtml(str) {
   div.textContent = str;
   return div.innerHTML;
 }
+
+/* ---------- 從 .ics 匯入行程 ---------- */
+const importModal = document.getElementById("importModal");
+let parsedIcsEvents = [];
+
+function subtractOneDay(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
+
+function unescapeIcsText(s) {
+  return (s || "").replace(/\\n/gi, " ").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\");
+}
+
+function parseIcsDateProp(value, isDateOnly) {
+  const v = value.replace("Z", "");
+  const y = v.slice(0, 4), m = v.slice(4, 6), d = v.slice(6, 8);
+  const date = `${y}-${m}-${d}`;
+  const time = (!isDateOnly && v.length >= 13) ? v.slice(9, 11) + ":" + v.slice(11, 13) : "";
+  return { date, time };
+}
+
+function parseIcs(text) {
+  const rawLines = text.split(/\r\n|\n|\r/);
+  const lines = [];
+  rawLines.forEach(line => {
+    if (/^[ \t]/.test(line) && lines.length) {
+      lines[lines.length - 1] += line.slice(1);
+    } else {
+      lines.push(line);
+    }
+  });
+
+  const events = [];
+  let cur = null;
+  lines.forEach(line => {
+    if (line === "BEGIN:VEVENT") { cur = {}; return; }
+    if (line === "END:VEVENT") { if (cur && cur.title && cur.start) events.push(cur); cur = null; return; }
+    if (!cur) return;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx === -1) return;
+    const left = line.slice(0, colonIdx);
+    const value = line.slice(colonIdx + 1);
+    const [propName, ...params] = left.split(";");
+    const isDateOnly = params.some(p => p.toUpperCase() === "VALUE=DATE");
+    if (propName === "SUMMARY") cur.title = unescapeIcsText(value);
+    else if (propName === "LOCATION") cur.location = unescapeIcsText(value);
+    else if (propName === "DESCRIPTION") cur.notes = unescapeIcsText(value);
+    else if (propName === "DTSTART") {
+      const { date, time } = parseIcsDateProp(value, isDateOnly);
+      cur.start = date;
+      cur.startTime = time;
+      cur.allDay = isDateOnly;
+    } else if (propName === "DTEND") {
+      const { date, time } = parseIcsDateProp(value, isDateOnly);
+      cur.end = isDateOnly ? subtractOneDay(date) : date;
+      cur.endTime = time;
+    }
+  });
+  events.forEach(ev => { if (!ev.end) ev.end = ev.start; });
+  return events;
+}
+
+function openImportModal(events) {
+  parsedIcsEvents = events;
+  document.getElementById("importCount").textContent = events.length;
+  const list = document.getElementById("importList");
+  list.innerHTML = "";
+  events.forEach((ev, idx) => {
+    const dateLabel = ev.start === ev.end ? ev.start : (ev.start + " ~ " + ev.end);
+    const row = document.createElement("label");
+    row.className = "checkRow";
+    row.innerHTML = `<input type="checkbox" data-idx="${idx}" />
+      <span>${escapeHtml(ev.title)}（${dateLabel}${ev.location ? "・" + escapeHtml(ev.location) : ""}）</span>`;
+    list.appendChild(row);
+  });
+  importModal.classList.add("show");
+}
+
+document.getElementById("importBtn").onclick = () => document.getElementById("icsFileInput").click();
+
+document.getElementById("icsFileInput").onchange = (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const events = parseIcs(reader.result);
+    if (!events.length) { alert("這個檔案裡沒有讀到可匯入的行程"); return; }
+    openImportModal(events);
+  };
+  reader.onerror = () => alert("讀取檔案失敗");
+  reader.readAsText(file);
+};
+
+document.getElementById("importCancelBtn").onclick = () => importModal.classList.remove("show");
+
+document.getElementById("importConfirmBtn").onclick = async () => {
+  const checked = Array.from(document.querySelectorAll('#importList input[type="checkbox"]:checked'));
+  if (!checked.length) { alert("請至少選一筆要匯入的行程"); return; }
+  try {
+    const batch = db.batch();
+    checked.forEach(cb => {
+      const ev = parsedIcsEvents[Number(cb.dataset.idx)];
+      const ref = db.collection("trips").doc();
+      batch.set(ref, {
+        title: ev.title,
+        start: ev.start,
+        end: ev.end,
+        startTime: ev.startTime || "",
+        endTime: ev.endTime || "",
+        location: ev.location || "",
+        siteNumber: "",
+        siteFee: 0,
+        notes: ev.notes || "",
+        participantUids: [currentUser.uid],
+        ownerUid: currentUser.uid,
+        ownerName: currentProfile.displayName,
+        color: currentProfile.color,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    await batch.commit();
+    importModal.classList.remove("show");
+    alert(`已匯入 ${checked.length} 筆行程`);
+  } catch (e) {
+    alert("匯入失敗：" + e.message);
+  }
+};
 </script>
 </body>
 </html>
