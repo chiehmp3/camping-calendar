@@ -204,6 +204,23 @@
   .btnGhost { background: #f1f0eb; color: var(--text); }
   .btnDanger { background: #fceceb; color: #c0392b; }
 
+  .mapLink { display: none; font-size: 12px; color: var(--brand); text-decoration: none; margin-top: 4px; }
+  .mapLink.show { display: inline-block; }
+
+  .checkList { max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+  .checkRow { display: flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 0; }
+  .checkRow input[type="checkbox"] { width: auto; margin: 0; }
+  .checkRow .paidTag { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .checkRow .paidTag.isPaid { color: var(--brand); font-weight: 600; }
+
+  .shareNote { font-weight: normal; color: var(--muted); }
+
+  .exportRow { display: flex; gap: 10px; margin-bottom: 14px; }
+  .exportRow button {
+    flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
+  }
+
   .fc { font-size: 13px; }
   .fc-toolbar-title { font-size: 16px !important; }
 
@@ -254,6 +271,12 @@
   <div class="modalCard">
     <h2 id="modalTitle">新增露營行程</h2>
     <input type="hidden" id="tripId" />
+
+    <div class="exportRow" id="exportRow" style="display:none;">
+      <button type="button" id="googleCalBtn">📅 加到 Google 日曆</button>
+      <button type="button" id="icsBtn">⬇️ 下載 .ics（Apple 日曆等）</button>
+    </div>
+
     <div class="field">
       <label>行程名稱</label>
       <input id="tripTitle" type="text" placeholder="例如：拉拉山露營" />
@@ -268,9 +291,42 @@
         <input id="tripEnd" type="date" />
       </div>
     </div>
+    <div class="field row">
+      <div>
+        <label>報到時間（選填）</label>
+        <input id="tripStartTime" type="time" />
+      </div>
+      <div>
+        <label>離營時間（選填）</label>
+        <input id="tripEndTime" type="time" />
+      </div>
+    </div>
     <div class="field">
-      <label>備註（地點、營位等，選填）</label>
+      <label>地點</label>
+      <input id="tripLocation" type="text" placeholder="地標名稱、地址，或貼上 Google 地圖連結" />
+      <a id="locationMapLink" class="mapLink" href="#" target="_blank" rel="noopener">📍 在 Google 地圖開啟</a>
+    </div>
+    <div class="field row">
+      <div>
+        <label>營位</label>
+        <input id="tripSite" type="text" placeholder="例如：A5" />
+      </div>
+      <div>
+        <label>營位費用（總額）</label>
+        <input id="tripFee" type="number" min="0" step="1" placeholder="0" />
+      </div>
+    </div>
+    <div class="field">
+      <label>備註（選填）</label>
       <textarea id="tripNotes" rows="3" placeholder="選填"></textarea>
+    </div>
+    <div class="field">
+      <label>一起分攤的人（費用會平均分攤）</label>
+      <div class="checkList" id="participantsList"></div>
+    </div>
+    <div class="field" id="paymentsField" style="display:none;">
+      <label>付款狀態 <span class="shareNote">（每人應付 $<span id="perPersonShare">0</span>，只能勾選自己的付款狀態）</span></label>
+      <div class="checkList" id="paymentsList"></div>
     </div>
     <div class="modalActions">
       <button class="btnGhost" id="cancelBtn">取消</button>
@@ -305,7 +361,10 @@ let currentProfile = null;
 let calendar = null;
 let unsubTrips = null;
 let unsubUsers = null;
+let unsubPayments = null;
 let allUsers = {};
+let currentTripId = null;
+let currentTripProps = null;
 
 /* ---------- DOM refs ---------- */
 const authScreen = document.getElementById("authScreen");
@@ -465,8 +524,15 @@ function listenTrips() {
           rawTitle: d.title,
           notes: d.notes || "",
           ownerUid: d.ownerUid,
+          ownerName: d.ownerName || "",
           start: d.start,
-          end: d.end
+          end: d.end,
+          startTime: d.startTime || "",
+          endTime: d.endTime || "",
+          location: d.location || "",
+          siteNumber: d.siteNumber || "",
+          siteFee: d.siteFee || 0,
+          participantUids: d.participantUids || [d.ownerUid]
         }
       });
     });
@@ -492,46 +558,208 @@ function openModal(event) {
   document.getElementById("tripTitle").value = "";
   document.getElementById("tripStart").value = "";
   document.getElementById("tripEnd").value = "";
+  document.getElementById("tripStartTime").value = "";
+  document.getElementById("tripEndTime").value = "";
+  document.getElementById("tripLocation").value = "";
+  document.getElementById("tripSite").value = "";
+  document.getElementById("tripFee").value = "";
   document.getElementById("tripNotes").value = "";
   document.getElementById("deleteBtn").style.display = "none";
+  document.getElementById("exportRow").style.display = "none";
+  document.getElementById("paymentsField").style.display = "none";
+  if (unsubPayments) { unsubPayments(); unsubPayments = null; }
+
+  const fields = ["tripTitle", "tripStart", "tripEnd", "tripStartTime", "tripEndTime", "tripLocation", "tripSite", "tripFee", "tripNotes"];
 
   if (event) {
     const props = event.extendedProps;
     const isOwner = props.ownerUid === currentUser.uid;
+    currentTripId = event.id;
+    currentTripProps = props;
+
     document.getElementById("modalTitle").textContent = isOwner ? "編輯露營行程" : "露營行程（僅本人可編輯）";
     document.getElementById("tripId").value = event.id;
     document.getElementById("tripTitle").value = props.rawTitle;
     document.getElementById("tripStart").value = props.start;
     document.getElementById("tripEnd").value = props.end;
+    document.getElementById("tripStartTime").value = props.startTime;
+    document.getElementById("tripEndTime").value = props.endTime;
+    document.getElementById("tripLocation").value = props.location;
+    document.getElementById("tripSite").value = props.siteNumber;
+    document.getElementById("tripFee").value = props.siteFee || "";
     document.getElementById("tripNotes").value = props.notes;
 
-    document.getElementById("tripTitle").disabled = !isOwner;
-    document.getElementById("tripStart").disabled = !isOwner;
-    document.getElementById("tripEnd").disabled = !isOwner;
-    document.getElementById("tripNotes").disabled = !isOwner;
+    fields.forEach(id => { document.getElementById(id).disabled = !isOwner; });
     document.getElementById("saveBtn").style.display = isOwner ? "block" : "none";
     if (isOwner) document.getElementById("deleteBtn").style.display = "block";
+
+    renderParticipants(props.participantUids, isOwner);
+    updateLocationLink();
+
+    document.getElementById("exportRow").style.display = "flex";
+    document.getElementById("paymentsField").style.display = "block";
+    listenPayments(event.id, props.participantUids, props.siteFee);
   } else {
+    currentTripId = null;
+    currentTripProps = null;
     document.getElementById("modalTitle").textContent = "新增露營行程";
-    document.getElementById("tripTitle").disabled = false;
-    document.getElementById("tripStart").disabled = false;
-    document.getElementById("tripEnd").disabled = false;
-    document.getElementById("tripNotes").disabled = false;
+    fields.forEach(id => { document.getElementById(id).disabled = false; });
     document.getElementById("saveBtn").style.display = "block";
+    renderParticipants([currentUser.uid], true);
+    updateLocationLink();
   }
   tripModal.classList.add("show");
 }
 
 function closeModal() {
   tripModal.classList.remove("show");
+  if (unsubPayments) { unsubPayments(); unsubPayments = null; }
 }
+
+/* ---------- 地點 → Google 地圖連結 ---------- */
+function buildMapsUrl(loc) {
+  if (!loc) return null;
+  const trimmed = loc.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(trimmed);
+}
+
+function updateLocationLink() {
+  const link = document.getElementById("locationMapLink");
+  const url = buildMapsUrl(document.getElementById("tripLocation").value);
+  if (url) {
+    link.href = url;
+    link.classList.add("show");
+  } else {
+    link.classList.remove("show");
+  }
+}
+document.getElementById("tripLocation").oninput = updateLocationLink;
+
+/* ---------- 分攤成員 ---------- */
+function renderParticipants(selectedUids, editable) {
+  const list = document.getElementById("participantsList");
+  list.innerHTML = "";
+  Object.entries(allUsers).forEach(([uid, u]) => {
+    const row = document.createElement("label");
+    row.className = "checkRow";
+    row.innerHTML = `<input type="checkbox" value="${uid}" ${selectedUids.includes(uid) ? "checked" : ""} ${editable ? "" : "disabled"} />
+      <span class="dot" style="background:${u.color}"></span><span>${escapeHtml(u.displayName)}</span>`;
+    list.appendChild(row);
+  });
+}
+
+function getSelectedParticipants() {
+  const uids = Array.from(document.querySelectorAll('#participantsList input[type="checkbox"]:checked')).map(cb => cb.value);
+  if (!uids.includes(currentUser.uid)) uids.push(currentUser.uid);
+  return uids;
+}
+
+/* ---------- 分攤付款狀態 ---------- */
+function listenPayments(tripId, participantUids, fee) {
+  const perPerson = participantUids.length ? Math.round((fee || 0) / participantUids.length) : 0;
+  document.getElementById("perPersonShare").textContent = perPerson;
+  unsubPayments = db.collection("trips").doc(tripId).collection("payments").onSnapshot((snap) => {
+    const paidMap = {};
+    snap.forEach(doc => { paidMap[doc.id] = !!doc.data().paid; });
+    renderPayments(tripId, participantUids, paidMap);
+  });
+}
+
+function renderPayments(tripId, participantUids, paidMap) {
+  const list = document.getElementById("paymentsList");
+  list.innerHTML = "";
+  participantUids.forEach(uid => {
+    const u = allUsers[uid];
+    if (!u) return;
+    const paid = !!paidMap[uid];
+    const isMe = uid === currentUser.uid;
+    const row = document.createElement("label");
+    row.className = "checkRow";
+    row.innerHTML = `<input type="checkbox" ${paid ? "checked" : ""} ${isMe ? "" : "disabled"} />
+      <span class="dot" style="background:${u.color}"></span><span>${escapeHtml(u.displayName)}</span>
+      <span class="paidTag ${paid ? "isPaid" : ""}">${paid ? "已付款" : "未付款"}</span>`;
+    if (isMe) {
+      row.querySelector("input").onchange = async (e) => {
+        await db.collection("trips").doc(tripId).collection("payments").doc(uid).set({
+          paid: e.target.checked,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      };
+    }
+    list.appendChild(row);
+  });
+}
+
+/* ---------- 匯出到 Google / Apple 日曆 ---------- */
+function buildEventDescription(props) {
+  const lines = [];
+  if (props.siteNumber) lines.push("營位：" + props.siteNumber);
+  if (props.siteFee) lines.push("營位費用：$" + props.siteFee);
+  if (props.startTime) lines.push("報到時間：" + props.startTime);
+  if (props.endTime) lines.push("離營時間：" + props.endTime);
+  if (props.notes) lines.push(props.notes);
+  return lines.join("\n");
+}
+
+document.getElementById("googleCalBtn").onclick = () => {
+  if (!currentTripProps) return;
+  const props = currentTripProps;
+  const start = props.start.replace(/-/g, "");
+  const end = addOneDay(props.end).replace(/-/g, "");
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: props.rawTitle,
+    dates: start + "/" + end,
+    details: buildEventDescription(props),
+    location: props.location || ""
+  });
+  window.open("https://calendar.google.com/calendar/render?" + params.toString(), "_blank");
+};
+
+document.getElementById("icsBtn").onclick = () => {
+  if (!currentTripProps || !currentTripId) return;
+  const props = currentTripProps;
+  const esc = (s) => (s || "").replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//camping-calendar//tw",
+    "BEGIN:VEVENT",
+    "UID:" + currentTripId + "@camping-calendar",
+    "DTSTAMP:" + new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z",
+    "DTSTART;VALUE=DATE:" + props.start.replace(/-/g, ""),
+    "DTEND;VALUE=DATE:" + addOneDay(props.end).replace(/-/g, ""),
+    "SUMMARY:" + esc(props.rawTitle),
+    "LOCATION:" + esc(props.location || ""),
+    "DESCRIPTION:" + esc(buildEventDescription(props)),
+    "END:VEVENT",
+    "END:VCALENDAR"
+  ].join("\r\n");
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (props.rawTitle || "camping-trip") + ".ics";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
 
 document.getElementById("saveBtn").onclick = async () => {
   const id = document.getElementById("tripId").value;
   const title = document.getElementById("tripTitle").value.trim();
   const start = document.getElementById("tripStart").value;
   const end = document.getElementById("tripEnd").value || start;
+  const startTime = document.getElementById("tripStartTime").value;
+  const endTime = document.getElementById("tripEndTime").value;
+  const location = document.getElementById("tripLocation").value.trim();
+  const siteNumber = document.getElementById("tripSite").value.trim();
+  const siteFee = Number(document.getElementById("tripFee").value) || 0;
   const notes = document.getElementById("tripNotes").value.trim();
+  const participantUids = getSelectedParticipants();
 
   if (!title || !start) {
     alert("請至少填寫行程名稱與開始日期");
@@ -541,9 +769,13 @@ document.getElementById("saveBtn").onclick = async () => {
     alert("結束日期不能早於開始日期");
     return;
   }
+  if (siteFee < 0) {
+    alert("營位費用不能是負數");
+    return;
+  }
 
   const data = {
-    title, start, end, notes,
+    title, start, end, startTime, endTime, location, siteNumber, siteFee, notes, participantUids,
     ownerUid: currentUser.uid,
     ownerName: currentProfile.displayName,
     color: currentProfile.color,
@@ -568,7 +800,11 @@ document.getElementById("deleteBtn").onclick = async () => {
   if (!id) return;
   if (!confirm("確定要刪除這個行程嗎？")) return;
   try {
-    await db.collection("trips").doc(id).delete();
+    const paymentsSnap = await db.collection("trips").doc(id).collection("payments").get();
+    const batch = db.batch();
+    paymentsSnap.forEach(doc => batch.delete(doc.ref));
+    batch.delete(db.collection("trips").doc(id));
+    await batch.commit();
     closeModal();
   } catch (e) {
     alert("刪除失敗：" + e.message);
