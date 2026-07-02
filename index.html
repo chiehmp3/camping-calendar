@@ -282,6 +282,24 @@
   <div class="modalCard">
     <h2>選擇要匯入的行程</h2>
     <p class="shareNote" style="margin-bottom:10px;">從檔案讀到 <span id="importCount">0</span> 筆，勾選想加入露營行事曆的項目（沒打勾的不會匯入）</p>
+
+    <div class="field row">
+      <div>
+        <label>只顯示此日期之後</label>
+        <input id="importFilterFrom" type="date" />
+      </div>
+      <div>
+        <label>只顯示此日期之前</label>
+        <input id="importFilterTo" type="date" />
+      </div>
+    </div>
+    <div class="exportRow">
+      <button type="button" id="importFilterBtn">套用篩選</button>
+      <button type="button" id="importFilterClearBtn">清除篩選</button>
+    </div>
+
+    <button type="button" id="importSelectAllBtn" class="btnGhost" style="width:100%; margin-bottom:10px;">全選</button>
+
     <div class="checkList" id="importList" style="max-height:320px;"></div>
     <div class="modalActions">
       <button class="btnGhost" id="importCancelBtn">取消</button>
@@ -846,6 +864,7 @@ function escapeHtml(str) {
 /* ---------- 從 .ics 匯入行程 ---------- */
 const importModal = document.getElementById("importModal");
 let parsedIcsEvents = [];
+let selectedIdx = new Set();
 
 function subtractOneDay(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -907,19 +926,45 @@ function parseIcs(text) {
   return events;
 }
 
-function openImportModal(events) {
-  parsedIcsEvents = events;
+function renderImportList(events) {
   document.getElementById("importCount").textContent = events.length;
   const list = document.getElementById("importList");
   list.innerHTML = "";
-  events.forEach((ev, idx) => {
+  events.forEach(({ ev, idx }) => {
     const dateLabel = ev.start === ev.end ? ev.start : (ev.start + " ~ " + ev.end);
     const row = document.createElement("label");
     row.className = "checkRow";
-    row.innerHTML = `<input type="checkbox" data-idx="${idx}" />
+    row.innerHTML = `<input type="checkbox" data-idx="${idx}" ${selectedIdx.has(idx) ? "checked" : ""} />
       <span>${escapeHtml(ev.title)}（${dateLabel}${ev.location ? "・" + escapeHtml(ev.location) : ""}）</span>`;
+    row.querySelector("input").onchange = (e) => {
+      if (e.target.checked) selectedIdx.add(idx);
+      else selectedIdx.delete(idx);
+      updateSelectAllLabel(events);
+    };
     list.appendChild(row);
   });
+  updateSelectAllLabel(events);
+}
+
+function currentFilteredEvents() {
+  const from = document.getElementById("importFilterFrom").value;
+  const to = document.getElementById("importFilterTo").value;
+  return parsedIcsEvents
+    .map((ev, idx) => ({ ev, idx }))
+    .filter(({ ev }) => (!from || ev.start >= from) && (!to || ev.start <= to));
+}
+
+function updateSelectAllLabel(visibleEvents) {
+  const allSelected = visibleEvents.length > 0 && visibleEvents.every(({ idx }) => selectedIdx.has(idx));
+  document.getElementById("importSelectAllBtn").textContent = allSelected ? "取消全選" : "全選";
+}
+
+function openImportModal(events) {
+  parsedIcsEvents = events;
+  selectedIdx = new Set();
+  document.getElementById("importFilterFrom").value = "";
+  document.getElementById("importFilterTo").value = "";
+  renderImportList(currentFilteredEvents());
   importModal.classList.add("show");
 }
 
@@ -939,15 +984,29 @@ document.getElementById("icsFileInput").onchange = (e) => {
   reader.readAsText(file);
 };
 
+document.getElementById("importFilterBtn").onclick = () => renderImportList(currentFilteredEvents());
+
+document.getElementById("importFilterClearBtn").onclick = () => {
+  document.getElementById("importFilterFrom").value = "";
+  document.getElementById("importFilterTo").value = "";
+  renderImportList(currentFilteredEvents());
+};
+
+document.getElementById("importSelectAllBtn").onclick = () => {
+  const visible = currentFilteredEvents();
+  const allSelected = visible.length > 0 && visible.every(({ idx }) => selectedIdx.has(idx));
+  visible.forEach(({ idx }) => { if (allSelected) selectedIdx.delete(idx); else selectedIdx.add(idx); });
+  renderImportList(visible);
+};
+
 document.getElementById("importCancelBtn").onclick = () => importModal.classList.remove("show");
 
 document.getElementById("importConfirmBtn").onclick = async () => {
-  const checked = Array.from(document.querySelectorAll('#importList input[type="checkbox"]:checked'));
-  if (!checked.length) { alert("請至少選一筆要匯入的行程"); return; }
+  if (!selectedIdx.size) { alert("請至少選一筆要匯入的行程"); return; }
   try {
     const batch = db.batch();
-    checked.forEach(cb => {
-      const ev = parsedIcsEvents[Number(cb.dataset.idx)];
+    selectedIdx.forEach(idx => {
+      const ev = parsedIcsEvents[idx];
       const ref = db.collection("trips").doc();
       batch.set(ref, {
         title: ev.title,
@@ -969,7 +1028,7 @@ document.getElementById("importConfirmBtn").onclick = async () => {
     });
     await batch.commit();
     importModal.classList.remove("show");
-    alert(`已匯入 ${checked.length} 筆行程`);
+    alert(`已匯入 ${selectedIdx.size} 筆行程`);
   } catch (e) {
     alert("匯入失敗：" + e.message);
   }
