@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>露營行事曆</title>
+
+<!-- FullCalendar -->
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+
+<!-- Firebase (compat 版本，適合直接用 script 標籤、不需要打包工具) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<style>
+  :root {
+    --brand: #2f6f4f;
+    --bg: #f6f5f1;
+    --card: #ffffff;
+    --border: #e2e0d8;
+    --text: #2a2a2a;
+    --muted: #7a7a72;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Microsoft JhengHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* ---------- 登入畫面 ---------- */
+  #authScreen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .authCard {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 32px 24px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+  .authCard h1 {
+    font-size: 20px;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .authCard p.sub {
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    margin-top: 0;
+    margin-bottom: 20px;
+  }
+  .authCard input {
+    width: 100%;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 15px;
+  }
+  .authCard button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: var(--brand);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 6px;
+    cursor: pointer;
+  }
+  .authCard button.secondary {
+    background: transparent;
+    color: var(--brand);
+    border: 1px solid var(--brand);
+  }
+  .authCard .errMsg {
+    color: #c0392b;
+    font-size: 13px;
+    min-height: 18px;
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  /* ---------- 主畫面 ---------- */
+  #appScreen { display: none; }
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    white-space: nowrap;
+  }
+  #userBadge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block;
+    border: 1px solid rgba(0,0,0,0.15);
+  }
+  #colorPicker {
+    width: 26px; height: 26px;
+    border: none; padding: 0; border-radius: 50%; cursor: pointer;
+  }
+  #logoutBtn {
+    background: none;
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  #legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .legendItem { display: flex; align-items: center; gap: 5px; }
+
+  #calendarWrap { padding: 10px; max-width: 900px; margin: 0 auto; }
+  #addBtn {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--brand);
+    color: #fff;
+    font-size: 28px;
+    border: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    cursor: pointer;
+    z-index: 60;
+    line-height: 56px;
+    padding: 0;
+  }
+
+  /* ---------- Modal ---------- */
+  .modalOverlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modalOverlay.show { display: flex; }
+  .modalCard {
+    background: #fff;
+    width: 100%;
+    max-width: 480px;
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  @media (min-width: 600px) {
+    .modalOverlay { align-items: center; }
+    .modalCard { border-radius: 16px; }
+  }
+  .modalCard h2 { margin-top: 0; font-size: 17px; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .field input, .field textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; font-family: inherit;
+  }
+  .field.row { display: flex; gap: 10px; }
+  .field.row > div { flex: 1; }
+  .modalActions { display: flex; gap: 10px; margin-top: 16px; }
+  .modalActions button {
+    flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 14px; cursor: pointer;
+  }
+  .btnPrimary { background: var(--brand); color: #fff; font-weight: 600; }
+  .btnGhost { background: #f1f0eb; color: var(--text); }
+  .btnDanger { background: #fceceb; color: #c0392b; }
+
+  .fc { font-size: 13px; }
+  .fc-toolbar-title { font-size: 16px !important; }
+
+  @media (max-width: 480px) {
+    header h1 { font-size: 14px; }
+    #calendarWrap { padding: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== 登入 / 註冊畫面 ===== -->
+<div id="authScreen">
+  <div class="authCard">
+    <h1>🏕️ 露營行事曆</h1>
+    <p class="sub">登入後即可新增與查看大家的露營行程</p>
+    <input id="emailInput" type="email" placeholder="Email" autocomplete="username" />
+    <input id="passwordInput" type="password" placeholder="密碼（至少 6 碼）" autocomplete="current-password" />
+    <input id="nameInput" type="text" placeholder="顯示名稱（第一次註冊時填寫）" />
+    <button id="loginBtn">登入</button>
+    <button id="signupBtn" class="secondary">第一次使用？註冊新帳號</button>
+    <div class="errMsg" id="authErr"></div>
+  </div>
+</div>
+
+<!-- ===== 主畫面 ===== -->
+<div id="appScreen">
+  <header>
+    <h1>🏕️ 露營行事曆</h1>
+    <div id="userBadge">
+      <input type="color" id="colorPicker" title="選擇你的顏色" />
+      <span id="userNameLabel"></span>
+      <button id="logoutBtn">登出</button>
+    </div>
+  </header>
+
+  <div id="legend"></div>
+
+  <div id="calendarWrap">
+    <div id="calendar"></div>
+  </div>
+
+  <button id="addBtn" title="新增露營行程">＋</button>
+</div>
+
+<!-- ===== 新增 / 編輯行程 Modal ===== -->
+<div class="modalOverlay" id="tripModal">
+  <div class="modalCard">
+    <h2 id="modalTitle">新增露營行程</h2>
+    <input type="hidden" id="tripId" />
+    <div class="field">
+      <label>行程名稱</label>
+      <input id="tripTitle" type="text" placeholder="例如：拉拉山露營" />
+    </div>
+    <div class="field row">
+      <div>
+        <label>開始日期</label>
+        <input id="tripStart" type="date" />
+      </div>
+      <div>
+        <label>結束日期</label>
+        <input id="tripEnd" type="date" />
+      </div>
+    </div>
+    <div class="field">
+      <label>備註（地點、營位等，選填）</label>
+      <textarea id="tripNotes" rows="3" placeholder="選填"></textarea>
+    </div>
+    <div class="modalActions">
+      <button class="btnGhost" id="cancelBtn">取消</button>
+      <button class="btnDanger" id="deleteBtn" style="display:none;">刪除</button>
+      <button class="btnPrimary" id="saveBtn">儲存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   1) 請把下面的 firebaseConfig 換成你自己 Firebase 專案的設定
+      （在 Firebase Console > 專案設定 > 一般 > 你的應用程式 取得）
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "請貼上你的 apiKey",
+  authDomain: "請貼上你的 authDomain",
+  projectId: "請貼上你的 projectId",
+  storageBucket: "請貼上你的 storageBucket",
+  messagingSenderId: "請貼上你的 messagingSenderId",
+  appId: "請貼上你的 appId"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const DEFAULT_COLORS = ["#2f6f4f", "#c0392b", "#2980b9", "#8e44ad", "#e67e22", "#16a085", "#d35400", "#34495e"];
+
+let currentUser = null;
+let currentProfile = null;
+let calendar = null;
+let unsubTrips = null;
+let unsubUsers = null;
+let allUsers = {};
+
+/* ---------- DOM refs ---------- */
+const authScreen = document.getElementById("authScreen");
+const appScreen = document.getElementById("appScreen");
+const authErr = document.getElementById("authErr");
+
+/* ---------- 登入 / 註冊 ---------- */
+document.getElementById("loginBtn").onclick = async () => {
+  authErr.textContent = "";
+  const email = document.getElementById("emailInput").value.trim();
+  const pw = document.getElementById("passwordInput").value;
+  if (!email || !pw) { authErr.textContent = "請輸入 Email 與密碼"; return; }
+  try {
+    await auth.signInWithEmailAndPassword(email, pw);
+  } catch (e) {
+    authErr.textContent = translateAuthError(e);
+  }
+};
+
+document.getElementById("signupBtn").onclick = async () => {
+  authErr.textContent = "";
+  const email = document.getElementById("emailInput").value.trim();
+  const pw = document.getElementById("passwordInput").value;
+  const name = document.getElementById("nameInput").value.trim() || email.split("@")[0];
+  if (!email || !pw) { authErr.textContent = "請輸入 Email 與密碼"; return; }
+  if (pw.length < 6) { authErr.textContent = "密碼至少需要 6 碼"; return; }
+  try {
+    const cred = await auth.createUserWithEmailAndPassword(email, pw);
+    const color = DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)];
+    await db.collection("users").doc(cred.user.uid).set({
+      displayName: name,
+      color: color,
+      email: email
+    });
+  } catch (e) {
+    authErr.textContent = translateAuthError(e);
+  }
+};
+
+document.getElementById("logoutBtn").onclick = () => auth.signOut();
+
+function translateAuthError(e) {
+  const code = e.code || "";
+  if (code.includes("email-already-in-use")) return "這個 Email 已經註冊過了，請直接登入";
+  if (code.includes("wrong-password") || code.includes("invalid-credential")) return "密碼錯誤";
+  if (code.includes("user-not-found")) return "找不到這個帳號，請先註冊";
+  if (code.includes("invalid-email")) return "Email 格式不正確";
+  if (code.includes("weak-password")) return "密碼太簡單，至少需要 6 碼";
+  return "發生錯誤：" + e.message;
+}
+
+/* ---------- 登入狀態監聽 ---------- */
+auth.onAuthStateChanged(async (user) => {
+  if (unsubTrips) { unsubTrips(); unsubTrips = null; }
+  if (unsubUsers) { unsubUsers(); unsubUsers = null; }
+
+  if (!user) {
+    currentUser = null;
+    authScreen.style.display = "flex";
+    appScreen.style.display = "none";
+    return;
+  }
+  currentUser = user;
+
+  let profileSnap = await db.collection("users").doc(user.uid).get();
+  if (!profileSnap.exists) {
+    const color = DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)];
+    await db.collection("users").doc(user.uid).set({
+      displayName: user.email.split("@")[0],
+      color: color,
+      email: user.email
+    });
+    profileSnap = await db.collection("users").doc(user.uid).get();
+  }
+  currentProfile = profileSnap.data();
+
+  authScreen.style.display = "none";
+  appScreen.style.display = "block";
+
+  document.getElementById("userNameLabel").textContent = currentProfile.displayName;
+  document.getElementById("colorPicker").value = currentProfile.color;
+
+  initCalendar();
+  listenUsers();
+  listenTrips();
+});
+
+/* ---------- 個人顏色 ---------- */
+document.getElementById("colorPicker").onchange = async (e) => {
+  const color = e.target.value;
+  await db.collection("users").doc(currentUser.uid).update({ color });
+  currentProfile.color = color;
+  // 更新自己所有行程的顏色
+  const mine = await db.collection("trips").where("ownerUid", "==", currentUser.uid).get();
+  const batch = db.batch();
+  mine.forEach(doc => batch.update(doc.ref, { color }));
+  await batch.commit();
+};
+
+/* ---------- 使用者列表（圖例） ---------- */
+function listenUsers() {
+  unsubUsers = db.collection("users").onSnapshot((snap) => {
+    allUsers = {};
+    snap.forEach(doc => { allUsers[doc.id] = doc.data(); });
+    renderLegend();
+  });
+}
+
+function renderLegend() {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = "";
+  Object.values(allUsers).forEach(u => {
+    const item = document.createElement("div");
+    item.className = "legendItem";
+    item.innerHTML = `<span class="dot" style="background:${u.color}"></span><span>${escapeHtml(u.displayName)}</span>`;
+    legend.appendChild(item);
+  });
+}
+
+/* ---------- 行事曆 ---------- */
+function initCalendar() {
+  const el = document.getElementById("calendar");
+  const isMobile = window.innerWidth < 600;
+  calendar = new FullCalendar.Calendar(el, {
+    initialView: isMobile ? "listMonth" : "dayGridMonth",
+    height: "auto",
+    headerToolbar: {
+      left: "prev,next today",
+      center: "title",
+      right: isMobile ? "dayGridMonth,listMonth" : "dayGridMonth,listMonth"
+    },
+    locale: "zh-tw",
+    firstDay: 1,
+    events: [],
+    eventClick: (info) => {
+      const props = info.event.extendedProps;
+      openModal(info.event);
+    }
+  });
+  calendar.render();
+}
+
+function listenTrips() {
+  unsubTrips = db.collection("trips").onSnapshot((snap) => {
+    const events = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      events.push({
+        id: doc.id,
+        title: (d.ownerName ? d.ownerName + "・" : "") + d.title,
+        start: d.start,
+        end: addOneDay(d.end),
+        allDay: true,
+        backgroundColor: d.color,
+        borderColor: d.color,
+        extendedProps: {
+          rawTitle: d.title,
+          notes: d.notes || "",
+          ownerUid: d.ownerUid,
+          start: d.start,
+          end: d.end
+        }
+      });
+    });
+    calendar.removeAllEvents();
+    calendar.addEventSource(events);
+  });
+}
+
+function addOneDay(dateStr) {
+  // FullCalendar 的 end 是 exclusive，所以要 +1 天才會把結束日整天顯示出來
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/* ---------- 新增 / 編輯 Modal ---------- */
+const tripModal = document.getElementById("tripModal");
+document.getElementById("addBtn").onclick = () => openModal(null);
+document.getElementById("cancelBtn").onclick = closeModal;
+
+function openModal(event) {
+  document.getElementById("tripId").value = "";
+  document.getElementById("tripTitle").value = "";
+  document.getElementById("tripStart").value = "";
+  document.getElementById("tripEnd").value = "";
+  document.getElementById("tripNotes").value = "";
+  document.getElementById("deleteBtn").style.display = "none";
+
+  if (event) {
+    const props = event.extendedProps;
+    const isOwner = props.ownerUid === currentUser.uid;
+    document.getElementById("modalTitle").textContent = isOwner ? "編輯露營行程" : "露營行程（僅本人可編輯）";
+    document.getElementById("tripId").value = event.id;
+    document.getElementById("tripTitle").value = props.rawTitle;
+    document.getElementById("tripStart").value = props.start;
+    document.getElementById("tripEnd").value = props.end;
+    document.getElementById("tripNotes").value = props.notes;
+
+    document.getElementById("tripTitle").disabled = !isOwner;
+    document.getElementById("tripStart").disabled = !isOwner;
+    document.getElementById("tripEnd").disabled = !isOwner;
+    document.getElementById("tripNotes").disabled = !isOwner;
+    document.getElementById("saveBtn").style.display = isOwner ? "block" : "none";
+    if (isOwner) document.getElementById("deleteBtn").style.display = "block";
+  } else {
+    document.getElementById("modalTitle").textContent = "新增露營行程";
+    document.getElementById("tripTitle").disabled = false;
+    document.getElementById("tripStart").disabled = false;
+    document.getElementById("tripEnd").disabled = false;
+    document.getElementById("tripNotes").disabled = false;
+    document.getElementById("saveBtn").style.display = "block";
+  }
+  tripModal.classList.add("show");
+}
+
+function closeModal() {
+  tripModal.classList.remove("show");
+}
+
+document.getElementById("saveBtn").onclick = async () => {
+  const id = document.getElementById("tripId").value;
+  const title = document.getElementById("tripTitle").value.trim();
+  const start = document.getElementById("tripStart").value;
+  const end = document.getElementById("tripEnd").value || start;
+  const notes = document.getElementById("tripNotes").value.trim();
+
+  if (!title || !start) {
+    alert("請至少填寫行程名稱與開始日期");
+    return;
+  }
+  if (end < start) {
+    alert("結束日期不能早於開始日期");
+    return;
+  }
+
+  const data = {
+    title, start, end, notes,
+    ownerUid: currentUser.uid,
+    ownerName: currentProfile.displayName,
+    color: currentProfile.color,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  try {
+    if (id) {
+      await db.collection("trips").doc(id).update(data);
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection("trips").add(data);
+    }
+    closeModal();
+  } catch (e) {
+    alert("儲存失敗：" + e.message);
+  }
+};
+
+document.getElementById("deleteBtn").onclick = async () => {
+  const id = document.getElementById("tripId").value;
+  if (!id) return;
+  if (!confirm("確定要刪除這個行程嗎？")) return;
+  try {
+    await db.collection("trips").doc(id).delete();
+    closeModal();
+  } catch (e) {
+    alert("刪除失敗：" + e.message);
+  }
+};
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
