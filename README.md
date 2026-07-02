@@ -21,14 +21,16 @@
 
 ## 第二步：啟用登入功能（Authentication）
 
-1. 左側選單點「建構」(Build) → 「Authentication」
+> Firebase 主控台改版過，如果你左側選單沒看到「建構」(Build)，代表你用的是新版介面，請照下面的路徑找。
+
+1. 左側選單點「**安全性**」，展開後點「**Authentication**」
 2. 點「開始使用」(Get started)
 3. 在「登入方式」清單中，找到「電子郵件/密碼」(Email/Password)，點進去
 4. 把第一個開關（電子郵件/密碼）打開，點「儲存」
 
 ## 第三步：建立資料庫（Firestore）
 
-1. 左側選單點「建構」→「Firestore Database」
+1. 左側選單點「**資料庫和儲存空間**」，展開後在「NoSQL」區塊點「**Firestore**」（不是 SQL Connect，也不是 Realtime Database）
 2. 點「建立資料庫」(Create database)
 3. 位置選擇離台灣近的，例如 `asia-east1 (台灣)`，點「下一步」
 4. 安全性規則先選「以測試模式啟動」(Start in test mode)，點「建立」
