@@ -543,9 +543,11 @@ function listenTrips() {
 
 function addOneDay(dateStr) {
   // FullCalendar 的 end 是 exclusive，所以要 +1 天才會把結束日整天顯示出來
-  const d = new Date(dateStr + "T00:00:00");
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  // 用 UTC 建構/運算日期，避免在 UTC+8 等時區用本地時間算日期時，toISOString() 轉回 UTC 又倒退一天
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
 }
 
 /* ---------- 新增 / 編輯 Modal ---------- */
