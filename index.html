@@ -227,6 +227,19 @@
     background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
   }
 
+  #rangeCalendar { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  .rcHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
+  .rcHeader button {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    width: 28px; height: 28px; cursor: pointer; font-size: 14px;
+  }
+  .rcGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
+  .rcDow { color: var(--muted); padding: 4px 0; font-weight: 600; }
+  .rcDay { padding: 6px 0; border-radius: 6px; cursor: pointer; }
+  .rcDay:hover { background: #f1f0eb; }
+  .rcDay.rcInRange { background: #dcebe3; }
+  .rcDay.rcStart, .rcDay.rcEnd { background: var(--brand); color: #fff; font-weight: 600; }
+
   .fc { font-size: 13px; }
   .fc-toolbar-title { font-size: 16px !important; }
 
@@ -283,19 +296,11 @@
     <h2>選擇要匯入的行程</h2>
     <p class="shareNote" style="margin-bottom:10px;">從檔案讀到 <span id="importCount">0</span> 筆，勾選想加入露營行事曆的項目（沒打勾的不會匯入）</p>
 
-    <div class="field row">
-      <div>
-        <label>只顯示此日期之後</label>
-        <input id="importFilterFrom" type="date" />
-      </div>
-      <div>
-        <label>只顯示此日期之前</label>
-        <input id="importFilterTo" type="date" />
-      </div>
-    </div>
-    <div class="exportRow">
-      <button type="button" id="importFilterBtn">套用篩選</button>
-      <button type="button" id="importFilterClearBtn">清除篩選</button>
+    <div class="field">
+      <label>只顯示某個日期範圍內的行程（先點開始日期，再點結束日期）</label>
+      <div id="rangeSummary" class="shareNote" style="margin-bottom:6px;"></div>
+      <div id="rangeCalendar"></div>
+      <button type="button" id="importFilterClearBtn" class="btnGhost" style="width:100%; margin-top:8px;">清除範圍（顯示全部）</button>
     </div>
 
     <button type="button" id="importSelectAllBtn" class="btnGhost" style="width:100%; margin-bottom:10px;">全選</button>
@@ -947,11 +952,9 @@ function renderImportList(events) {
 }
 
 function currentFilteredEvents() {
-  const from = document.getElementById("importFilterFrom").value;
-  const to = document.getElementById("importFilterTo").value;
   return parsedIcsEvents
     .map((ev, idx) => ({ ev, idx }))
-    .filter(({ ev }) => (!from || ev.start >= from) && (!to || ev.start <= to));
+    .filter(({ ev }) => (!rangeStart || ev.start >= rangeStart) && (!rangeEnd || ev.start <= rangeEnd));
 }
 
 function updateSelectAllLabel(visibleEvents) {
@@ -959,11 +962,92 @@ function updateSelectAllLabel(visibleEvents) {
   document.getElementById("importSelectAllBtn").textContent = allSelected ? "取消全選" : "全選";
 }
 
+/* ---------- 日期範圍選擇小月曆 ---------- */
+let rangeStart = null;
+let rangeEnd = null;
+let rcYear = 0;
+let rcMonth = 0; // 0-indexed
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function ymd(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
+
+function renderRangeCalendar() {
+  const container = document.getElementById("rangeCalendar");
+  const firstWeekday = (new Date(rcYear, rcMonth, 1).getDay() + 6) % 7; // 週一=0
+  const daysInMonth = new Date(rcYear, rcMonth + 1, 0).getDate();
+
+  let html = `<div class="rcHeader">
+    <button type="button" id="rcPrev">‹</button>
+    <span>${rcYear} 年 ${rcMonth + 1} 月</span>
+    <button type="button" id="rcNext">›</button>
+  </div><div class="rcGrid">`;
+  ["一", "二", "三", "四", "五", "六", "日"].forEach(d => { html += `<div class="rcDow">${d}</div>`; });
+  for (let i = 0; i < firstWeekday; i++) html += `<div></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = ymd(rcYear, rcMonth, d);
+    let cls = "rcDay";
+    if (rangeStart && rangeEnd && dateStr > rangeStart && dateStr < rangeEnd) cls += " rcInRange";
+    if (dateStr === rangeStart) cls += " rcStart";
+    if (dateStr === rangeEnd) cls += " rcEnd";
+    html += `<div class="${cls}" data-date="${dateStr}">${d}</div>`;
+  }
+  html += `</div>`;
+  container.innerHTML = html;
+
+  document.getElementById("rcPrev").onclick = () => { shiftRangeCalendarMonth(-1); };
+  document.getElementById("rcNext").onclick = () => { shiftRangeCalendarMonth(1); };
+  container.querySelectorAll(".rcDay").forEach(el => {
+    el.onclick = () => onRangeDayClick(el.dataset.date);
+  });
+}
+
+function shiftRangeCalendarMonth(delta) {
+  rcMonth += delta;
+  if (rcMonth < 0) { rcMonth = 11; rcYear--; }
+  if (rcMonth > 11) { rcMonth = 0; rcYear++; }
+  renderRangeCalendar();
+}
+
+function onRangeDayClick(dateStr) {
+  if (!rangeStart || rangeEnd) {
+    rangeStart = dateStr;
+    rangeEnd = null;
+  } else if (dateStr < rangeStart) {
+    rangeEnd = rangeStart;
+    rangeStart = dateStr;
+  } else {
+    rangeEnd = dateStr;
+  }
+  updateRangeSummary();
+  renderRangeCalendar();
+  renderImportList(currentFilteredEvents());
+}
+
+function updateRangeSummary() {
+  const el = document.getElementById("rangeSummary");
+  if (!rangeStart) el.textContent = "尚未設定範圍（目前顯示全部）";
+  else if (!rangeEnd) el.textContent = `已選開始日期 ${rangeStart}，請再點一次結束日期（點同一天代表只篩選這一天）`;
+  else el.textContent = `篩選範圍：${rangeStart} ~ ${rangeEnd}`;
+}
+
+document.getElementById("importFilterClearBtn").onclick = () => {
+  rangeStart = null;
+  rangeEnd = null;
+  updateRangeSummary();
+  renderRangeCalendar();
+  renderImportList(currentFilteredEvents());
+};
+
 function openImportModal(events) {
   parsedIcsEvents = events;
   selectedIdx = new Set();
-  document.getElementById("importFilterFrom").value = "";
-  document.getElementById("importFilterTo").value = "";
+  rangeStart = null;
+  rangeEnd = null;
+  const anchor = events.length ? events[0].start.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+  rcYear = anchor[0];
+  rcMonth = anchor[1] - 1;
+  updateRangeSummary();
+  renderRangeCalendar();
   renderImportList(currentFilteredEvents());
   importModal.classList.add("show");
 }
@@ -982,14 +1066,6 @@ document.getElementById("icsFileInput").onchange = (e) => {
   };
   reader.onerror = () => alert("讀取檔案失敗");
   reader.readAsText(file);
-};
-
-document.getElementById("importFilterBtn").onclick = () => renderImportList(currentFilteredEvents());
-
-document.getElementById("importFilterClearBtn").onclick = () => {
-  document.getElementById("importFilterFrom").value = "";
-  document.getElementById("importFilterTo").value = "";
-  renderImportList(currentFilteredEvents());
 };
 
 document.getElementById("importSelectAllBtn").onclick = () => {
