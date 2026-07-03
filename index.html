@@ -233,6 +233,10 @@
     background: none; border: 1px solid var(--border); border-radius: 6px;
     width: 28px; height: 28px; cursor: pointer; font-size: 14px;
   }
+  .rcHeader select {
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px;
+    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+  }
   .rcGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
   .rcDow { color: var(--muted); padding: 4px 0; font-weight: 600; }
   .rcDay { padding: 6px 0; border-radius: 6px; cursor: pointer; }
@@ -971,14 +975,34 @@ let rcMonth = 0; // 0-indexed
 function pad2(n) { return String(n).padStart(2, "0"); }
 function ymd(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
 
+function rangeCalendarYearBounds() {
+  const years = parsedIcsEvents.map(ev => Number(ev.start.slice(0, 4)));
+  const nowYear = new Date().getFullYear();
+  const known = years.length ? years : [nowYear];
+  return { minYear: Math.min(nowYear, ...known) - 1, maxYear: Math.max(nowYear, ...known) + 1 };
+}
+
 function renderRangeCalendar() {
   const container = document.getElementById("rangeCalendar");
   const firstWeekday = (new Date(rcYear, rcMonth, 1).getDay() + 6) % 7; // 週一=0
   const daysInMonth = new Date(rcYear, rcMonth + 1, 0).getDate();
+  const { minYear, maxYear } = rangeCalendarYearBounds();
+
+  let yearOptions = "";
+  for (let y = minYear; y <= maxYear; y++) {
+    yearOptions += `<option value="${y}" ${y === rcYear ? "selected" : ""}>${y}</option>`;
+  }
+  let monthOptions = "";
+  for (let m = 1; m <= 12; m++) {
+    monthOptions += `<option value="${m}" ${m === rcMonth + 1 ? "selected" : ""}>${m}</option>`;
+  }
 
   let html = `<div class="rcHeader">
     <button type="button" id="rcPrev">‹</button>
-    <span>${rcYear} 年 ${rcMonth + 1} 月</span>
+    <span>
+      <select id="rcYearSelect">${yearOptions}</select> 年
+      <select id="rcMonthSelect">${monthOptions}</select> 月
+    </span>
     <button type="button" id="rcNext">›</button>
   </div><div class="rcGrid">`;
   ["一", "二", "三", "四", "五", "六", "日"].forEach(d => { html += `<div class="rcDow">${d}</div>`; });
@@ -996,6 +1020,8 @@ function renderRangeCalendar() {
 
   document.getElementById("rcPrev").onclick = () => { shiftRangeCalendarMonth(-1); };
   document.getElementById("rcNext").onclick = () => { shiftRangeCalendarMonth(1); };
+  document.getElementById("rcYearSelect").onchange = (e) => { rcYear = Number(e.target.value); renderRangeCalendar(); };
+  document.getElementById("rcMonthSelect").onchange = (e) => { rcMonth = Number(e.target.value) - 1; renderRangeCalendar(); };
   container.querySelectorAll(".rcDay").forEach(el => {
     el.onclick = () => onRangeDayClick(el.dataset.date);
   });
