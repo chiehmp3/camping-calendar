@@ -243,6 +243,19 @@
   .rcDay:hover { background: #f1f0eb; }
   .rcDay.rcInRange { background: #dcebe3; }
   .rcDay.rcStart, .rcDay.rcEnd { background: var(--brand); color: #fff; font-weight: 600; }
+  .rcReadonly .rcDay { cursor: default; }
+  .rcReadonly .rcDay:hover { background: none; }
+
+  .timeSelectRow select {
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 4px;
+    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+  }
+
+  #calendarNav { padding: 10px 14px 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  #calendarNav select {
+    border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px;
+    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+  }
 
   .fc { font-size: 13px; }
   .fc-toolbar-title { font-size: 16px !important; }
@@ -285,6 +298,11 @@
   <div id="importBar">
     <button id="importBtn" type="button">📥 從 Apple / Google 日曆匯入 (.ics)</button>
     <input type="file" id="icsFileInput" accept=".ics,text/calendar" style="display:none;" />
+  </div>
+
+  <div id="calendarNav">
+    <select id="calYearSelect"></select> 年
+    <select id="calMonthSelect"></select> 月
   </div>
 
   <div id="calendarWrap">
@@ -332,24 +350,19 @@
       <label>行程名稱</label>
       <input id="tripTitle" type="text" placeholder="例如：拉拉山露營" />
     </div>
-    <div class="field row">
-      <div>
-        <label>開始日期</label>
-        <input id="tripStart" type="date" />
-      </div>
-      <div>
-        <label>結束日期</label>
-        <input id="tripEnd" type="date" />
-      </div>
+    <div class="field">
+      <label>露營日期（先點開始日期，再點結束日期）</label>
+      <div id="tripRangeSummary" class="shareNote" style="margin-bottom:6px;"></div>
+      <div id="tripRangeCalendar"></div>
     </div>
     <div class="field row">
       <div>
         <label>報到時間（選填）</label>
-        <input id="tripStartTime" type="time" />
+        <div id="tripStartTimeSelects" class="timeSelectRow"></div>
       </div>
       <div>
         <label>離營時間（選填）</label>
-        <input id="tripEndTime" type="time" />
+        <div id="tripEndTimeSelects" class="timeSelectRow"></div>
       </div>
     </div>
     <div class="field">
@@ -538,24 +551,63 @@ function renderLegend() {
 /* ---------- 行事曆 ---------- */
 function initCalendar() {
   const el = document.getElementById("calendar");
-  const isMobile = window.innerWidth < 600;
   calendar = new FullCalendar.Calendar(el, {
-    initialView: isMobile ? "listMonth" : "dayGridMonth",
+    initialView: "dayGridMonth",
     height: "auto",
     headerToolbar: {
       left: "prev,next today",
       center: "title",
-      right: isMobile ? "dayGridMonth,listMonth" : "dayGridMonth,listMonth"
+      right: "dayGridMonth,listMonth"
     },
     locale: "zh-tw",
     firstDay: 1,
     events: [],
+    datesSet: () => { syncCalendarNavSelects(calendar.getDate()); },
     eventClick: (info) => {
-      const props = info.event.extendedProps;
       openModal(info.event);
     }
   });
   calendar.render();
+  populateCalendarNavSelects();
+  syncCalendarNavSelects(calendar.getDate());
+}
+
+function populateCalendarNavSelects() {
+  const nowYear = new Date().getFullYear();
+  const yearSelect = document.getElementById("calYearSelect");
+  let yearOptions = "";
+  for (let y = nowYear - 2; y <= nowYear + 5; y++) yearOptions += `<option value="${y}">${y}</option>`;
+  yearSelect.innerHTML = yearOptions;
+
+  const monthSelect = document.getElementById("calMonthSelect");
+  let monthOptions = "";
+  for (let m = 1; m <= 12; m++) monthOptions += `<option value="${m}">${m}</option>`;
+  monthSelect.innerHTML = monthOptions;
+
+  yearSelect.onchange = jumpCalendarToSelectedMonth;
+  monthSelect.onchange = jumpCalendarToSelectedMonth;
+}
+
+function jumpCalendarToSelectedMonth() {
+  const y = Number(document.getElementById("calYearSelect").value);
+  const m = Number(document.getElementById("calMonthSelect").value);
+  calendar.gotoDate(new Date(y, m - 1, 1));
+}
+
+function syncCalendarNavSelects(date) {
+  const yearSelect = document.getElementById("calYearSelect");
+  const y = date.getFullYear();
+  if (!Array.from(yearSelect.options).some(o => Number(o.value) === y)) {
+    const opt = document.createElement("option");
+    opt.value = y;
+    opt.textContent = y;
+    yearSelect.appendChild(opt);
+    Array.from(yearSelect.options)
+      .sort((a, b) => Number(a.value) - Number(b.value))
+      .forEach(o => yearSelect.appendChild(o));
+  }
+  yearSelect.value = y;
+  document.getElementById("calMonthSelect").value = date.getMonth() + 1;
 }
 
 function listenTrips() {
@@ -609,10 +661,6 @@ document.getElementById("cancelBtn").onclick = closeModal;
 function openModal(event) {
   document.getElementById("tripId").value = "";
   document.getElementById("tripTitle").value = "";
-  document.getElementById("tripStart").value = "";
-  document.getElementById("tripEnd").value = "";
-  document.getElementById("tripStartTime").value = "";
-  document.getElementById("tripEndTime").value = "";
   document.getElementById("tripLocation").value = "";
   document.getElementById("tripSite").value = "";
   document.getElementById("tripFee").value = "";
@@ -622,7 +670,7 @@ function openModal(event) {
   document.getElementById("paymentsField").style.display = "none";
   if (unsubPayments) { unsubPayments(); unsubPayments = null; }
 
-  const fields = ["tripTitle", "tripStart", "tripEnd", "tripStartTime", "tripEndTime", "tripLocation", "tripSite", "tripFee", "tripNotes"];
+  const fields = ["tripTitle", "tripLocation", "tripSite", "tripFee", "tripNotes"];
 
   if (event) {
     const props = event.extendedProps;
@@ -633,14 +681,18 @@ function openModal(event) {
     document.getElementById("modalTitle").textContent = isOwner ? "編輯露營行程" : "露營行程（僅本人可編輯）";
     document.getElementById("tripId").value = event.id;
     document.getElementById("tripTitle").value = props.rawTitle;
-    document.getElementById("tripStart").value = props.start;
-    document.getElementById("tripEnd").value = props.end;
-    document.getElementById("tripStartTime").value = props.startTime;
-    document.getElementById("tripEndTime").value = props.endTime;
     document.getElementById("tripLocation").value = props.location;
     document.getElementById("tripSite").value = props.siteNumber;
     document.getElementById("tripFee").value = props.siteFee || "";
     document.getElementById("tripNotes").value = props.notes;
+
+    tripRangePicker.setRange(props.start, props.end);
+    tripRangePicker.setInteractive(isOwner);
+    document.getElementById("tripStartTimeSelects").innerHTML = timeSelectsHtml("tripStartHour", "tripStartMinute", props.startTime);
+    document.getElementById("tripEndTimeSelects").innerHTML = timeSelectsHtml("tripEndHour", "tripEndMinute", props.endTime);
+    ["tripStartHour", "tripStartMinute", "tripEndHour", "tripEndMinute"].forEach(id => {
+      document.getElementById(id).disabled = !isOwner;
+    });
 
     fields.forEach(id => { document.getElementById(id).disabled = !isOwner; });
     document.getElementById("saveBtn").style.display = isOwner ? "block" : "none";
@@ -658,6 +710,12 @@ function openModal(event) {
     document.getElementById("modalTitle").textContent = "新增露營行程";
     fields.forEach(id => { document.getElementById(id).disabled = false; });
     document.getElementById("saveBtn").style.display = "block";
+
+    tripRangePicker.reset();
+    tripRangePicker.setInteractive(true);
+    document.getElementById("tripStartTimeSelects").innerHTML = timeSelectsHtml("tripStartHour", "tripStartMinute", "");
+    document.getElementById("tripEndTimeSelects").innerHTML = timeSelectsHtml("tripEndHour", "tripEndMinute", "");
+
     renderParticipants([currentUser.uid], true);
     updateLocationLink();
   }
@@ -804,10 +862,10 @@ document.getElementById("icsBtn").onclick = () => {
 document.getElementById("saveBtn").onclick = async () => {
   const id = document.getElementById("tripId").value;
   const title = document.getElementById("tripTitle").value.trim();
-  const start = document.getElementById("tripStart").value;
-  const end = document.getElementById("tripEnd").value || start;
-  const startTime = document.getElementById("tripStartTime").value;
-  const endTime = document.getElementById("tripEndTime").value;
+  const { start, end: rangeEnd } = tripRangePicker.getRange();
+  const end = rangeEnd || start;
+  const startTime = getTimeValue("tripStartHour", "tripStartMinute");
+  const endTime = getTimeValue("tripEndHour", "tripEndMinute");
   const location = document.getElementById("tripLocation").value.trim();
   const siteNumber = document.getElementById("tripSite").value.trim();
   const siteFee = Number(document.getElementById("tripFee").value) || 0;
@@ -868,6 +926,170 @@ function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+/* ---------- 日期範圍選擇小月曆（共用元件） ---------- */
+function pad2(n) { return String(n).padStart(2, "0"); }
+function ymd(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
+
+function createRangePicker({ containerEl, summaryEl, getYearBounds, formatSummary, onChange }) {
+  let start = null;
+  let end = null;
+  let viewYear = new Date().getFullYear();
+  let viewMonth = new Date().getMonth();
+  let interactive = true;
+
+  function render() {
+    let { minYear, maxYear } = getYearBounds();
+    if (viewYear < minYear) minYear = viewYear;
+    if (viewYear > maxYear) maxYear = viewYear;
+
+    const firstWeekday = (new Date(viewYear, viewMonth, 1).getDay() + 6) % 7; // 週一=0
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+    let yearOptions = "";
+    for (let y = minYear; y <= maxYear; y++) {
+      yearOptions += `<option value="${y}" ${y === viewYear ? "selected" : ""}>${y}</option>`;
+    }
+    let monthOptions = "";
+    for (let m = 1; m <= 12; m++) {
+      monthOptions += `<option value="${m}" ${m === viewMonth + 1 ? "selected" : ""}>${m}</option>`;
+    }
+
+    let html = `<div class="rcHeader">
+      <button type="button" class="rcPrev">‹</button>
+      <span>
+        <select class="rcYearSelect">${yearOptions}</select> 年
+        <select class="rcMonthSelect">${monthOptions}</select> 月
+      </span>
+      <button type="button" class="rcNext">›</button>
+    </div><div class="rcGrid">`;
+    ["一", "二", "三", "四", "五", "六", "日"].forEach(d => { html += `<div class="rcDow">${d}</div>`; });
+    for (let i = 0; i < firstWeekday; i++) html += `<div></div>`;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = ymd(viewYear, viewMonth, d);
+      let cls = "rcDay";
+      if (start && end && dateStr > start && dateStr < end) cls += " rcInRange";
+      if (dateStr === start) cls += " rcStart";
+      if (dateStr === end) cls += " rcEnd";
+      html += `<div class="${cls}" data-date="${dateStr}">${d}</div>`;
+    }
+    html += `</div>`;
+    containerEl.innerHTML = html;
+    containerEl.classList.toggle("rcReadonly", !interactive);
+
+    containerEl.querySelector(".rcPrev").onclick = () => shiftMonth(-1);
+    containerEl.querySelector(".rcNext").onclick = () => shiftMonth(1);
+    containerEl.querySelector(".rcYearSelect").onchange = (e) => { viewYear = Number(e.target.value); render(); };
+    containerEl.querySelector(".rcMonthSelect").onchange = (e) => { viewMonth = Number(e.target.value) - 1; render(); };
+    if (interactive) {
+      containerEl.querySelectorAll(".rcDay").forEach(el => {
+        el.onclick = () => onDayClick(el.dataset.date);
+      });
+    }
+  }
+
+  function shiftMonth(delta) {
+    viewMonth += delta;
+    if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+    if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+    render();
+  }
+
+  function onDayClick(dateStr) {
+    if (!start || end) {
+      start = dateStr;
+      end = null;
+    } else if (dateStr < start) {
+      end = start;
+      start = dateStr;
+    } else {
+      end = dateStr;
+    }
+    updateSummary();
+    render();
+    if (onChange) onChange(start, end);
+  }
+
+  function updateSummary() {
+    summaryEl.textContent = formatSummary(start, end);
+  }
+
+  function reset(anchorDateStr) {
+    start = null;
+    end = null;
+    const now = new Date();
+    if (anchorDateStr) {
+      const [y, m] = anchorDateStr.split("-").map(Number);
+      viewYear = y;
+      viewMonth = m - 1;
+    } else {
+      viewYear = now.getFullYear();
+      viewMonth = now.getMonth();
+    }
+    updateSummary();
+    render();
+  }
+
+  function setRange(s, e) {
+    start = s || null;
+    end = start ? (e || s) : null;
+    if (start) {
+      const [y, m] = start.split("-").map(Number);
+      viewYear = y;
+      viewMonth = m - 1;
+    }
+    updateSummary();
+    render();
+  }
+
+  function setInteractive(flag) {
+    interactive = flag;
+    render();
+  }
+
+  function getRange() { return { start, end }; }
+
+  return { reset, setRange, getRange, setInteractive };
+}
+
+const tripRangePicker = createRangePicker({
+  containerEl: document.getElementById("tripRangeCalendar"),
+  summaryEl: document.getElementById("tripRangeSummary"),
+  getYearBounds: () => {
+    const y = new Date().getFullYear();
+    return { minYear: y - 1, maxYear: y + 3 };
+  },
+  formatSummary: (s, e) => {
+    if (!s) return "請點選開始日期";
+    if (!e) return `已選開始日期 ${s}，請再點一次結束日期（點同一天代表只有一天）`;
+    return `${s} ~ ${e}`;
+  }
+});
+
+/* ---------- 時間下拉選單 ---------- */
+const TIME_MINUTE_STEPS = ["00", "15", "30", "45"];
+
+function timeSelectsHtml(hourId, minuteId, hhmm) {
+  const [h, m] = (hhmm || "").split(":");
+  let hourOptions = `<option value="">--</option>`;
+  for (let i = 0; i < 24; i++) {
+    const hh = pad2(i);
+    hourOptions += `<option value="${hh}" ${hh === h ? "selected" : ""}>${hh}</option>`;
+  }
+  const minuteSet = new Set(TIME_MINUTE_STEPS);
+  if (m) minuteSet.add(m);
+  const minuteList = Array.from(minuteSet).sort();
+  const minuteOptions = minuteList.map(mm => `<option value="${mm}" ${mm === m ? "selected" : ""}>${mm}</option>`).join("");
+  return `<select id="${hourId}">${hourOptions}</select> 時
+    <select id="${minuteId}">${minuteOptions}</select> 分`;
+}
+
+function getTimeValue(hourId, minuteId) {
+  const h = document.getElementById(hourId).value;
+  if (!h) return "";
+  const m = document.getElementById(minuteId).value || "00";
+  return h + ":" + m;
 }
 
 /* ---------- 從 .ics 匯入行程 ---------- */
@@ -956,24 +1178,16 @@ function renderImportList(events) {
 }
 
 function currentFilteredEvents() {
+  const { start, end } = importRangePicker.getRange();
   return parsedIcsEvents
     .map((ev, idx) => ({ ev, idx }))
-    .filter(({ ev }) => (!rangeStart || ev.start >= rangeStart) && (!rangeEnd || ev.start <= rangeEnd));
+    .filter(({ ev }) => (!start || ev.start >= start) && (!end || ev.start <= end));
 }
 
 function updateSelectAllLabel(visibleEvents) {
   const allSelected = visibleEvents.length > 0 && visibleEvents.every(({ idx }) => selectedIdx.has(idx));
   document.getElementById("importSelectAllBtn").textContent = allSelected ? "取消全選" : "全選";
 }
-
-/* ---------- 日期範圍選擇小月曆 ---------- */
-let rangeStart = null;
-let rangeEnd = null;
-let rcYear = 0;
-let rcMonth = 0; // 0-indexed
-
-function pad2(n) { return String(n).padStart(2, "0"); }
-function ymd(y, m, d) { return `${y}-${pad2(m + 1)}-${pad2(d)}`; }
 
 function rangeCalendarYearBounds() {
   const years = parsedIcsEvents.map(ev => Number(ev.start.slice(0, 4)));
@@ -982,98 +1196,27 @@ function rangeCalendarYearBounds() {
   return { minYear: Math.min(nowYear, ...known) - 1, maxYear: Math.max(nowYear, ...known) + 1 };
 }
 
-function renderRangeCalendar() {
-  const container = document.getElementById("rangeCalendar");
-  const firstWeekday = (new Date(rcYear, rcMonth, 1).getDay() + 6) % 7; // 週一=0
-  const daysInMonth = new Date(rcYear, rcMonth + 1, 0).getDate();
-  const { minYear, maxYear } = rangeCalendarYearBounds();
-
-  let yearOptions = "";
-  for (let y = minYear; y <= maxYear; y++) {
-    yearOptions += `<option value="${y}" ${y === rcYear ? "selected" : ""}>${y}</option>`;
-  }
-  let monthOptions = "";
-  for (let m = 1; m <= 12; m++) {
-    monthOptions += `<option value="${m}" ${m === rcMonth + 1 ? "selected" : ""}>${m}</option>`;
-  }
-
-  let html = `<div class="rcHeader">
-    <button type="button" id="rcPrev">‹</button>
-    <span>
-      <select id="rcYearSelect">${yearOptions}</select> 年
-      <select id="rcMonthSelect">${monthOptions}</select> 月
-    </span>
-    <button type="button" id="rcNext">›</button>
-  </div><div class="rcGrid">`;
-  ["一", "二", "三", "四", "五", "六", "日"].forEach(d => { html += `<div class="rcDow">${d}</div>`; });
-  for (let i = 0; i < firstWeekday; i++) html += `<div></div>`;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateStr = ymd(rcYear, rcMonth, d);
-    let cls = "rcDay";
-    if (rangeStart && rangeEnd && dateStr > rangeStart && dateStr < rangeEnd) cls += " rcInRange";
-    if (dateStr === rangeStart) cls += " rcStart";
-    if (dateStr === rangeEnd) cls += " rcEnd";
-    html += `<div class="${cls}" data-date="${dateStr}">${d}</div>`;
-  }
-  html += `</div>`;
-  container.innerHTML = html;
-
-  document.getElementById("rcPrev").onclick = () => { shiftRangeCalendarMonth(-1); };
-  document.getElementById("rcNext").onclick = () => { shiftRangeCalendarMonth(1); };
-  document.getElementById("rcYearSelect").onchange = (e) => { rcYear = Number(e.target.value); renderRangeCalendar(); };
-  document.getElementById("rcMonthSelect").onchange = (e) => { rcMonth = Number(e.target.value) - 1; renderRangeCalendar(); };
-  container.querySelectorAll(".rcDay").forEach(el => {
-    el.onclick = () => onRangeDayClick(el.dataset.date);
-  });
-}
-
-function shiftRangeCalendarMonth(delta) {
-  rcMonth += delta;
-  if (rcMonth < 0) { rcMonth = 11; rcYear--; }
-  if (rcMonth > 11) { rcMonth = 0; rcYear++; }
-  renderRangeCalendar();
-}
-
-function onRangeDayClick(dateStr) {
-  if (!rangeStart || rangeEnd) {
-    rangeStart = dateStr;
-    rangeEnd = null;
-  } else if (dateStr < rangeStart) {
-    rangeEnd = rangeStart;
-    rangeStart = dateStr;
-  } else {
-    rangeEnd = dateStr;
-  }
-  updateRangeSummary();
-  renderRangeCalendar();
-  renderImportList(currentFilteredEvents());
-}
-
-function updateRangeSummary() {
-  const el = document.getElementById("rangeSummary");
-  if (!rangeStart) el.textContent = "尚未設定範圍（目前顯示全部）";
-  else if (!rangeEnd) el.textContent = `已選開始日期 ${rangeStart}，請再點一次結束日期（點同一天代表只篩選這一天）`;
-  else el.textContent = `篩選範圍：${rangeStart} ~ ${rangeEnd}`;
-}
+const importRangePicker = createRangePicker({
+  containerEl: document.getElementById("rangeCalendar"),
+  summaryEl: document.getElementById("rangeSummary"),
+  getYearBounds: rangeCalendarYearBounds,
+  formatSummary: (s, e) => {
+    if (!s) return "尚未設定範圍（目前顯示全部）";
+    if (!e) return `已選開始日期 ${s}，請再點一次結束日期（點同一天代表只篩選這一天）`;
+    return `篩選範圍：${s} ~ ${e}`;
+  },
+  onChange: () => renderImportList(currentFilteredEvents())
+});
 
 document.getElementById("importFilterClearBtn").onclick = () => {
-  rangeStart = null;
-  rangeEnd = null;
-  updateRangeSummary();
-  renderRangeCalendar();
+  importRangePicker.setRange(null, null);
   renderImportList(currentFilteredEvents());
 };
 
 function openImportModal(events) {
   parsedIcsEvents = events;
   selectedIdx = new Set();
-  rangeStart = null;
-  rangeEnd = null;
-  const anchor = events.length ? events[0].start.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
-  rcYear = anchor[0];
-  rcMonth = anchor[1] - 1;
-  updateRangeSummary();
-  renderRangeCalendar();
+  importRangePicker.reset(events.length ? events[0].start : null);
   renderImportList(currentFilteredEvents());
   importModal.classList.add("show");
 }
