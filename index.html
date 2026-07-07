@@ -429,6 +429,13 @@ let unsubPayments = null;
 let allUsers = {};
 let currentTripId = null;
 let currentTripProps = null;
+let allTripYears = [];
+
+function appYearBounds() {
+  const nowYear = new Date().getFullYear();
+  const known = allTripYears.length ? allTripYears : [nowYear];
+  return { minYear: Math.min(nowYear, ...known) - 1, maxYear: Math.max(nowYear, ...known) + 1 };
+}
 
 /* ---------- DOM refs ---------- */
 const authScreen = document.getElementById("authScreen");
@@ -573,10 +580,10 @@ function initCalendar() {
 }
 
 function populateCalendarNavSelects() {
-  const nowYear = new Date().getFullYear();
+  const { minYear, maxYear } = appYearBounds();
   const yearSelect = document.getElementById("calYearSelect");
   let yearOptions = "";
-  for (let y = nowYear - 2; y <= nowYear + 5; y++) yearOptions += `<option value="${y}">${y}</option>`;
+  for (let y = minYear; y <= maxYear; y++) yearOptions += `<option value="${y}">${y}</option>`;
   yearSelect.innerHTML = yearOptions;
 
   const monthSelect = document.getElementById("calMonthSelect");
@@ -594,27 +601,36 @@ function jumpCalendarToSelectedMonth() {
   calendar.gotoDate(new Date(y, m - 1, 1));
 }
 
-function syncCalendarNavSelects(date) {
+function ensureCalendarYearOption(y) {
   const yearSelect = document.getElementById("calYearSelect");
-  const y = date.getFullYear();
   if (!Array.from(yearSelect.options).some(o => Number(o.value) === y)) {
     const opt = document.createElement("option");
     opt.value = y;
     opt.textContent = y;
     yearSelect.appendChild(opt);
+    const keepValue = yearSelect.value;
     Array.from(yearSelect.options)
       .sort((a, b) => Number(a.value) - Number(b.value))
       .forEach(o => yearSelect.appendChild(o));
+    if (keepValue) yearSelect.value = keepValue;
   }
-  yearSelect.value = y;
+}
+
+function syncCalendarNavSelects(date) {
+  const y = date.getFullYear();
+  ensureCalendarYearOption(y);
+  document.getElementById("calYearSelect").value = y;
   document.getElementById("calMonthSelect").value = date.getMonth() + 1;
 }
 
 function listenTrips() {
   unsubTrips = db.collection("trips").onSnapshot((snap) => {
     const events = [];
+    const years = new Set();
     snap.forEach(doc => {
       const d = doc.data();
+      years.add(Number(d.start.slice(0, 4)));
+      years.add(Number(d.end.slice(0, 4)));
       events.push({
         id: doc.id,
         title: (d.ownerName ? d.ownerName + "・" : "") + d.title,
@@ -639,6 +655,8 @@ function listenTrips() {
         }
       });
     });
+    allTripYears = Array.from(years);
+    allTripYears.forEach(ensureCalendarYearOption);
     calendar.removeAllEvents();
     calendar.addEventSource(events);
   });
@@ -1056,10 +1074,7 @@ function createRangePicker({ containerEl, summaryEl, getYearBounds, formatSummar
 const tripRangePicker = createRangePicker({
   containerEl: document.getElementById("tripRangeCalendar"),
   summaryEl: document.getElementById("tripRangeSummary"),
-  getYearBounds: () => {
-    const y = new Date().getFullYear();
-    return { minYear: y - 1, maxYear: y + 3 };
-  },
+  getYearBounds: appYearBounds,
   formatSummary: (s, e) => {
     if (!s) return "請點選開始日期";
     if (!e) return `已選開始日期 ${s}，請再點一次結束日期（點同一天代表只有一天）`;
