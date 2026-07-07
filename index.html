@@ -579,12 +579,15 @@ function initCalendar() {
   syncCalendarNavSelects(calendar.getDate());
 }
 
+function relevantCalendarYears() {
+  const years = new Set(allTripYears);
+  years.add(new Date().getFullYear());
+  return Array.from(years).sort((a, b) => a - b);
+}
+
 function populateCalendarNavSelects() {
-  const { minYear, maxYear } = appYearBounds();
   const yearSelect = document.getElementById("calYearSelect");
-  let yearOptions = "";
-  for (let y = minYear; y <= maxYear; y++) yearOptions += `<option value="${y}">${y}</option>`;
-  yearSelect.innerHTML = yearOptions;
+  yearSelect.innerHTML = relevantCalendarYears().map(y => `<option value="${y}">${y}</option>`).join("");
 
   const monthSelect = document.getElementById("calMonthSelect");
   let monthOptions = "";
