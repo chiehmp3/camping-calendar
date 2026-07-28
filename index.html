@@ -226,6 +226,11 @@
     flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
     background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
   }
+  .layoutLinkBtn {
+    flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
+    text-align: center; text-decoration: none; display: block;
+  }
 
   #rangeCalendar { border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
   .rcHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
@@ -344,6 +349,10 @@
     <div class="exportRow" id="exportRow" style="display:none;">
       <button type="button" id="googleCalBtn">📅 加到 Google 日曆</button>
       <button type="button" id="icsBtn">⬇️ 下載 .ics（Apple 日曆等）</button>
+    </div>
+
+    <div class="exportRow" id="layoutRow" style="display:none;">
+      <a id="layoutLink" href="#" target="_blank" rel="noopener" class="layoutLinkBtn">🏕️ 查看 / 建立場地配置</a>
     </div>
 
     <div class="field">
@@ -688,6 +697,7 @@ function openModal(event) {
   document.getElementById("tripNotes").value = "";
   document.getElementById("deleteBtn").style.display = "none";
   document.getElementById("exportRow").style.display = "none";
+  document.getElementById("layoutRow").style.display = "none";
   document.getElementById("paymentsField").style.display = "none";
   if (unsubPayments) { unsubPayments(); unsubPayments = null; }
 
@@ -723,6 +733,8 @@ function openModal(event) {
     updateLocationLink();
 
     document.getElementById("exportRow").style.display = "flex";
+    document.getElementById("layoutRow").style.display = "flex";
+    document.getElementById("layoutLink").href = "https://chiehmp3.github.io/camp-planner/?tripId=" + event.id;
     document.getElementById("paymentsField").style.display = "block";
     listenPayments(event.id, props.participantUids, props.siteFee);
   } else {
