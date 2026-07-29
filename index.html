@@ -4,6 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
 <title>露營行事曆</title>
+<script>
+  // 在畫面繪製前套用存好的主題，避免深色模式使用者看到一瞬間的白畫面
+  try {
+    var t = localStorage.getItem("camping-calendar-theme");
+    if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+</script>
 
 <!-- FullCalendar -->
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet" />
@@ -17,11 +24,66 @@
 <style>
   :root {
     --brand: #2f6f4f;
+    --on-brand: #ffffff;
     --bg: #f6f5f1;
     --card: #ffffff;
     --border: #e2e0d8;
     --text: #2a2a2a;
     --muted: #7a7a72;
+    --soft: #f1f0eb;
+    --input-bg: #ffffff;
+    --danger: #c0392b;
+    --danger-soft: #fceceb;
+    --range: #dcebe3;
+    --overlay: rgba(0,0,0,0.4);
+    --shadow: rgba(0,0,0,0.08);
+    --shadow-strong: rgba(0,0,0,0.25);
+    --dot-border: rgba(0,0,0,0.15);
+    color-scheme: light;
+  }
+
+  /* 深夜模式。跟隨系統設定，除非使用者自己按了切換鈕（<html data-theme>）。 */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; }
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --brand: #58a67b;
+      --on-brand: #0f1a14;
+      --bg: #14171a;
+      --card: #1c2024;
+      --border: #2f353b;
+      --text: #e6e8ea;
+      --muted: #98a0a8;
+      --soft: #262b31;
+      --input-bg: #23282e;
+      --danger: #e0705e;
+      --danger-soft: #3a201d;
+      --range: #22392e;
+      --overlay: rgba(0,0,0,0.6);
+      --shadow: rgba(0,0,0,0.5);
+      --shadow-strong: rgba(0,0,0,0.6);
+      --dot-border: rgba(255,255,255,0.22);
+    }
+  }
+  :root[data-theme="dark"] {
+    --brand: #58a67b;
+    --on-brand: #0f1a14;
+    --bg: #14171a;
+    --card: #1c2024;
+    --border: #2f353b;
+    --text: #e6e8ea;
+    --muted: #98a0a8;
+    --soft: #262b31;
+    --input-bg: #23282e;
+    --danger: #e0705e;
+    --danger-soft: #3a201d;
+    --range: #22392e;
+    --overlay: rgba(0,0,0,0.6);
+    --shadow: rgba(0,0,0,0.5);
+    --shadow-strong: rgba(0,0,0,0.6);
+    --dot-border: rgba(255,255,255,0.22);
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body {
@@ -45,7 +107,7 @@
     padding: 32px 24px;
     width: 100%;
     max-width: 360px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    box-shadow: 0 4px 20px var(--shadow);
   }
   .authCard h1 {
     font-size: 20px;
@@ -63,8 +125,10 @@
     width: 100%;
     padding: 12px 14px;
     margin-bottom: 10px;
+    background: var(--input-bg);
     border: 1px solid var(--border);
     border-radius: 10px;
+    color: var(--text);
     font-size: 15px;
   }
   .authCard button {
@@ -73,7 +137,7 @@
     border: none;
     border-radius: 10px;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     font-size: 15px;
     font-weight: 600;
     margin-top: 6px;
@@ -85,7 +149,7 @@
     border: 1px solid var(--brand);
   }
   .authCard .errMsg {
-    color: #c0392b;
+    color: var(--danger);
     font-size: 13px;
     min-height: 18px;
     margin-top: 6px;
@@ -120,7 +184,7 @@
   .dot {
     width: 12px; height: 12px; border-radius: 50%;
     display: inline-block;
-    border: 1px solid rgba(0,0,0,0.15);
+    border: 1px solid var(--dot-border);
   }
   #colorPicker {
     width: 26px; height: 26px;
@@ -129,6 +193,7 @@
   #logoutBtn {
     background: none;
     border: 1px solid var(--border);
+    color: var(--text);
     padding: 6px 10px;
     border-radius: 8px;
     font-size: 12px;
@@ -160,10 +225,10 @@
     width: 56px; height: 56px;
     border-radius: 50%;
     background: var(--brand);
-    color: #fff;
+    color: var(--on-brand);
     font-size: 28px;
     border: none;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    box-shadow: 0 4px 14px var(--shadow-strong);
     cursor: pointer;
     z-index: 60;
     line-height: 56px;
@@ -174,14 +239,14 @@
   .modalOverlay {
     display: none;
     position: fixed; inset: 0;
-    background: rgba(0,0,0,0.4);
+    background: var(--overlay);
     z-index: 100;
     align-items: flex-end;
     justify-content: center;
   }
   .modalOverlay.show { display: flex; }
   .modalCard {
-    background: #fff;
+    background: var(--card);
     width: 100%;
     max-width: 480px;
     border-radius: 16px 16px 0 0;
@@ -199,6 +264,7 @@
   .field input, .field textarea {
     width: 100%; padding: 10px 12px; border: 1px solid var(--border);
     border-radius: 8px; font-size: 14px; font-family: inherit;
+    background: var(--input-bg); color: var(--text);
   }
   .field.row { display: flex; gap: 10px; }
   .field.row > div { flex: 1; }
@@ -206,9 +272,9 @@
   .modalActions button {
     flex: 1; padding: 12px; border-radius: 10px; border: none; font-size: 14px; cursor: pointer;
   }
-  .btnPrimary { background: var(--brand); color: #fff; font-weight: 600; }
-  .btnGhost { background: #f1f0eb; color: var(--text); }
-  .btnDanger { background: #fceceb; color: #c0392b; }
+  .btnPrimary { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+  .btnGhost { background: var(--soft); color: var(--text); }
+  .btnDanger { background: var(--danger-soft); color: var(--danger); }
 
   .mapLink { display: none; font-size: 12px; color: var(--brand); text-decoration: none; margin-top: 4px; }
   .mapLink.show { display: inline-block; }
@@ -224,11 +290,11 @@
   .exportRow { display: flex; gap: 10px; margin-bottom: 14px; }
   .exportRow button {
     flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
-    background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
+    background: var(--soft); color: var(--text); font-size: 13px; cursor: pointer;
   }
   .layoutLinkBtn {
     flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
-    background: #f1f0eb; color: var(--text); font-size: 13px; cursor: pointer;
+    background: var(--soft); color: var(--text); font-size: 13px; cursor: pointer;
     text-align: center; text-decoration: none; display: block;
   }
 
@@ -240,30 +306,81 @@
   }
   .rcHeader select {
     border: 1px solid var(--border); border-radius: 6px; padding: 3px 4px;
-    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+    font-size: 13px; font-family: inherit; background: var(--input-bg); color: var(--text);
   }
   .rcGrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
   .rcDow { color: var(--muted); padding: 4px 0; font-weight: 600; }
   .rcDay { padding: 6px 0; border-radius: 6px; cursor: pointer; }
-  .rcDay:hover { background: #f1f0eb; }
-  .rcDay.rcInRange { background: #dcebe3; }
-  .rcDay.rcStart, .rcDay.rcEnd { background: var(--brand); color: #fff; font-weight: 600; }
+  .rcDay:hover { background: var(--soft); }
+  .rcDay.rcInRange { background: var(--range); }
+  .rcDay.rcStart, .rcDay.rcEnd { background: var(--brand); color: var(--on-brand); font-weight: 600; }
   .rcReadonly .rcDay { cursor: default; }
   .rcReadonly .rcDay:hover { background: none; }
 
   .timeSelectRow select {
     border: 1px solid var(--border); border-radius: 6px; padding: 6px 4px;
-    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+    font-size: 13px; font-family: inherit; background: var(--input-bg); color: var(--text);
   }
 
   #calendarNav { padding: 10px 14px 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
   #calendarNav select {
     border: 1px solid var(--border); border-radius: 6px; padding: 5px 6px;
-    font-size: 13px; font-family: inherit; background: #fff; color: var(--text);
+    font-size: 13px; font-family: inherit; background: var(--input-bg); color: var(--text);
   }
 
   .fc { font-size: 13px; }
   .fc-toolbar-title { font-size: 16px !important; }
+
+  /* FullCalendar 有自己一套變數，宣告在 :root 上，所以我們也要蓋在 :root
+     （這段 <style> 在它的 <link> 之後，同分特異性由後者勝出）。
+     值直接指向我們的變數，換主題時會自動跟著變。 */
+  :root, .fc {
+    --fc-page-bg-color: var(--card);
+    --fc-border-color: var(--border);
+    --fc-neutral-bg-color: var(--soft);
+    --fc-neutral-text-color: var(--muted);
+    --fc-today-bg-color: var(--range);
+    --fc-highlight-color: var(--range);
+    --fc-button-text-color: var(--on-brand);
+    --fc-button-bg-color: var(--brand);
+    --fc-button-border-color: var(--brand);
+    --fc-button-hover-bg-color: var(--brand);
+    --fc-button-hover-border-color: var(--brand);
+    --fc-button-active-bg-color: var(--brand);
+    --fc-button-active-border-color: var(--brand);
+    --fc-list-event-hover-bg-color: var(--soft);
+  }
+  .fc { color: var(--text); }
+  .fc .fc-daygrid-day-number,
+  .fc .fc-col-header-cell-cushion,
+  .fc .fc-list-day-text,
+  .fc .fc-list-day-side-text { color: var(--text); }
+  .fc .fc-day-other .fc-daygrid-day-number { color: var(--muted); }
+
+  /* ---------- 深夜模式切換鈕 ---------- */
+  .themeBtn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 9px;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .themeRow { text-align: center; margin-top: 14px; }
+  /* 勝過 .authCard button 的滿版主色按鈕樣式 */
+  .themeRow .themeBtn {
+    width: auto;
+    margin-top: 0;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 400;
+    background: none;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
 
   @media (max-width: 480px) {
     header h1 { font-size: 14px; }
@@ -284,6 +401,7 @@
     <button id="loginBtn">登入</button>
     <button id="signupBtn" class="secondary">第一次使用？註冊新帳號</button>
     <div class="errMsg" id="authErr"></div>
+    <div class="themeRow"><button type="button" class="themeBtn"></button></div>
   </div>
 </div>
 
@@ -294,6 +412,7 @@
     <div id="userBadge">
       <input type="color" id="colorPicker" title="選擇你的顏色" />
       <span id="userNameLabel"></span>
+      <button type="button" class="themeBtn"></button>
       <button id="logoutBtn">登出</button>
     </div>
   </header>
@@ -485,6 +604,47 @@ document.getElementById("signupBtn").onclick = async () => {
 };
 
 document.getElementById("logoutBtn").onclick = () => auth.signOut();
+
+/* ---------- 深夜模式 ---------- */
+const THEME_KEY = "camping-calendar-theme";
+const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+let themePref = localStorage.getItem(THEME_KEY);
+if (themePref !== "dark" && themePref !== "light") themePref = "system";
+
+function themeIsDark() {
+  if (themePref === "dark") return true;
+  if (themePref === "light") return false;
+  return themeMedia.matches;
+}
+
+function applyTheme() {
+  const root = document.documentElement;
+  if (themePref === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", themePref);
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement("meta");
+    meta.name = "theme-color";
+    document.head.appendChild(meta);
+  }
+  meta.content = themeIsDark() ? "#1c2024" : "#ffffff";
+  const dark = themeIsDark();
+  for (const btn of document.querySelectorAll(".themeBtn")) {
+    btn.textContent = dark ? "☀ 淺色" : "☾ 深夜";
+    btn.title = dark ? "切換為淺色模式" : "切換為深夜模式";
+  }
+}
+
+for (const btn of document.querySelectorAll(".themeBtn")) {
+  btn.onclick = () => {
+    themePref = themeIsDark() ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, themePref);
+    applyTheme();
+  };
+}
+// 還在跟隨系統時，系統自己入夜切換也要跟著變
+themeMedia.addEventListener("change", () => { if (themePref === "system") applyTheme(); });
+applyTheme();
 
 function translateAuthError(e) {
   const code = e.code || "";
