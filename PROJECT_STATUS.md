@@ -22,6 +22,15 @@
 
 ## 已完成功能
 
+- **點日期新增行程**（10/8）：點月曆空白日期直接開新增視窗並帶入該日；拖曳（手機長按）多天則帶入整段區間
+- **手機日曆訂閱**（10/8，單向、唯讀）：每人一個專屬 `.ics` 訂閱網址（含自己建立＋被勾選分攤的行程，只同步今年 1/1 以後）。
+  - 流程：登入後 `getFeedUrl()` 在 Firestore `feedTokens/{uid}` 產生 32 碼隨機 token → GitHub Actions（`.github/workflows/feeds.yml`，每 10 分鐘＋可手動 Run workflow）執行 `scripts/build-feeds.js`，用服務帳戶讀 Firestore，輸出 `feeds/<token>.ics` 並 commit 回 main → GitHub Pages 發布
+  - 網頁：右上「📅 手機訂閱」按鈕＋首次登入自動跳窗（蘋果 `webcal://`、Google `calendar.google.com/calendar/r?cid=`）
+  - GitHub Secret `FIREBASE_SERVICE_ACCOUNT` 存服務帳戶金鑰；**金鑰 JSON 絕不可放進 repo**（`.gitignore` 已擋 `*firebase-adminsdk*.json`）
+  - 更新延遲：蘋果約 15–30 分鐘；Google 可能數小時。Google 用戶建議用電腦按「加到 Google 日曆」
+  - 朋友需先登入網頁一次才會有自己的檔案；`feeds/` 由機器人 commit，**改程式前先 `git pull`**
+  - 規則：`feedTokens/{uid}` 只有本人可讀寫（已發布到 Console）
+
 - Email/密碼登入註冊；每人可自選顏色（行事曆上以顏色區分建立者）
 - 多人共用月曆；**手機預設也是月曆**（可切換 list）
 - 行程欄位：日期範圍、報到/離營時間、地點、營位、營位費用、備註、分攤成員
