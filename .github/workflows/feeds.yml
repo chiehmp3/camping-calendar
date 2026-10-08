@@ -1,0 +1,34 @@
+name: Build calendar feeds
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: feeds
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-audit --no-fund
+      - run: node scripts/build-feeds.js
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Commit changed feeds
+        run: |
+          git config user.name "feeds-bot"
+          git config user.email "feeds-bot@users.noreply.github.com"
+          git add -A feeds
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "Update calendar feeds"
+          git push

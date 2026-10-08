@@ -11,6 +11,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // 日曆訂閱網址的私密代碼：只有本人能讀寫（GitHub Actions 用服務帳戶讀取，不受規則限制）
+    match /feedTokens/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
     // 露營行程：所有已登入的人都能讀（看到彼此的行程），
     // 但只有建立者（ownerUid）能新增、修改、刪除自己的行程
     match /trips/{tripId} {

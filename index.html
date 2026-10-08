@@ -413,6 +413,7 @@
       <input type="color" id="colorPicker" title="選擇你的顏色" />
       <span id="userNameLabel"></span>
       <button type="button" class="themeBtn"></button>
+      <button id="feedBtn" type="button" style="background:none;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer;">📅 手機訂閱</button>
       <button id="logoutBtn">登出</button>
     </div>
   </header>
@@ -434,6 +435,26 @@
   </div>
 
   <button id="addBtn" title="新增露營行程">＋</button>
+</div>
+
+<!-- ===== 手機日曆訂閱 Modal ===== -->
+<div class="modalOverlay" id="feedModal">
+  <div class="modalCard">
+    <h2>📅 把我的露營行程放進手機日曆</h2>
+    <p class="shareNote" style="margin-bottom:10px;">訂閱後，你建立或被勾選分攤的行程會自動出現在手機日曆；在網頁新增、修改或取消，手機也會跟著更新（只能看、不能在手機上編輯）。</p>
+    <div class="field">
+      <label>你的專屬訂閱網址（請勿分享給別人）</label>
+      <input type="text" id="feedUrlInput" readonly />
+    </div>
+    <div id="feedStatus" class="shareNote" style="margin-bottom:10px;"></div>
+    <div class="modalActions" style="flex-direction:column;">
+      <button type="button" class="btnPrimary" id="feedAppleBtn">加到蘋果日曆（iPhone / Mac）</button>
+      <button type="button" class="btnPrimary" id="feedGoogleBtn">加到 Google 日曆</button>
+      <button type="button" class="btnGhost" id="feedCopyBtn">複製網址</button>
+      <button type="button" class="btnGhost" id="feedCloseBtn">關閉</button>
+    </div>
+    <p class="shareNote" style="margin-top:10px;">更新速度：蘋果約 15～30 分鐘；Google 日曆較慢，可能要數小時。</p>
+  </div>
 </div>
 
 <!-- ===== 從 .ics 匯入行程 Modal ===== -->
@@ -690,7 +711,72 @@ auth.onAuthStateChanged(async (user) => {
   initCalendar();
   listenUsers();
   listenTrips();
+  promptFeedOnce();
 });
+
+/* ---------- 手機日曆訂閱（.ics 訂閱網址，由 GitHub Actions 定時產生） ---------- */
+const FEED_BASE = "https://chiehmp3.github.io/camping-calendar/feeds/";
+const feedModal = document.getElementById("feedModal");
+
+async function getFeedUrl() {
+  const ref = db.collection("feedTokens").doc(currentUser.uid);
+  let snap = await ref.get();
+  if (!snap.exists) {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    const token = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    await ref.set({ token });
+    snap = await ref.get();
+  }
+  return FEED_BASE + snap.data().token + ".ics";
+}
+
+async function openFeedModal() {
+  feedModal.classList.add("show");
+  const status = document.getElementById("feedStatus");
+  const input = document.getElementById("feedUrlInput");
+  const btns = ["feedAppleBtn", "feedGoogleBtn", "feedCopyBtn"].map(id => document.getElementById(id));
+  input.value = "";
+  status.textContent = "讀取中…";
+  btns.forEach(b => { b.disabled = true; });
+  let url;
+  try {
+    url = await getFeedUrl();
+  } catch (e) {
+    status.textContent = "無法取得訂閱網址：" + e.message;
+    return;
+  }
+  input.value = url;
+  const webcal = url.replace(/^https:/, "webcal:");
+  document.getElementById("feedAppleBtn").onclick = () => { location.href = webcal; };
+  document.getElementById("feedGoogleBtn").onclick = () => {
+    window.open("https://calendar.google.com/calendar/r?cid=" + encodeURIComponent(webcal), "_blank");
+  };
+  document.getElementById("feedCopyBtn").onclick = async () => {
+    try { await navigator.clipboard.writeText(url); status.textContent = "已複製網址"; }
+    catch (e) { input.select(); status.textContent = "請長按網址手動複製"; }
+  };
+  let ready = false;
+  try { ready = (await fetch(url + "?t=" + Date.now(), { cache: "no-store" })).ok; } catch (e) {}
+  if (ready) {
+    status.textContent = "";
+    btns.forEach(b => { b.disabled = false; });
+  } else {
+    status.textContent = "訂閱檔案準備中（第一次約需 10～20 分鐘），請稍後再回來點「📅 手機訂閱」。";
+    document.getElementById("feedCopyBtn").disabled = false;
+  }
+}
+
+function promptFeedOnce() {
+  let seen = false;
+  try { seen = localStorage.getItem("camping-feed-prompted-" + currentUser.uid) === "1"; } catch (e) {}
+  if (seen) return;
+  try { localStorage.setItem("camping-feed-prompted-" + currentUser.uid, "1"); } catch (e) {}
+  openFeedModal();
+}
+
+document.getElementById("feedBtn").onclick = openFeedModal;
+document.getElementById("feedCloseBtn").onclick = () => feedModal.classList.remove("show");
 
 /* ---------- 個人顏色 ---------- */
 document.getElementById("colorPicker").onchange = async (e) => {

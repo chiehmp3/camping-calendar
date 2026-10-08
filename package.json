@@ -1,0 +1,5 @@
+{
+  "name": "camping-calendar-feeds",
+  "private": true,
+  "dependencies": { "firebase-admin": "^12.6.0" }
+}
