@@ -738,6 +738,15 @@ function initCalendar() {
     locale: "zh-tw",
     firstDay: 1,
     events: [],
+    // 點空白日期 → 以該日新增；拖曳（手機長按）多天 → 以該區間新增
+    dateClick: (info) => { openModal(null, info.dateStr, info.dateStr); },
+    selectable: true,
+    selectLongPressDelay: 250,
+    select: (info) => {
+      calendar.unselect();
+      const last = shiftDay(info.endStr, -1);
+      if (last > info.startStr) openModal(null, info.startStr, last);
+    },
     datesSet: () => { syncCalendarNavSelects(calendar.getDate()); },
     eventClick: (info) => {
       openModal(info.event);
@@ -834,6 +843,13 @@ function listenTrips() {
   });
 }
 
+function shiftDay(dateStr, delta) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+}
+
 function addOneDay(dateStr) {
   // FullCalendar 的 end 是 exclusive，所以要 +1 天才會把結束日整天顯示出來
   // 用 UTC 建構/運算日期，避免在 UTC+8 等時區用本地時間算日期時，toISOString() 轉回 UTC 又倒退一天
@@ -848,7 +864,7 @@ const tripModal = document.getElementById("tripModal");
 document.getElementById("addBtn").onclick = () => openModal(null);
 document.getElementById("cancelBtn").onclick = closeModal;
 
-function openModal(event) {
+function openModal(event, presetStart, presetEnd) {
   document.getElementById("tripId").value = "";
   document.getElementById("tripTitle").value = "";
   document.getElementById("tripLocation").value = "";
@@ -905,6 +921,7 @@ function openModal(event) {
     document.getElementById("saveBtn").style.display = "block";
 
     tripRangePicker.reset();
+    if (presetStart) tripRangePicker.setRange(presetStart, presetEnd || presetStart);
     tripRangePicker.setInteractive(true);
     document.getElementById("tripStartTimeSelects").innerHTML = timeSelectsHtml("tripStartHour", "tripStartMinute", "");
     document.getElementById("tripEndTimeSelects").innerHTML = timeSelectsHtml("tripEndHour", "tripEndMinute", "");
